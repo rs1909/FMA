@@ -19,5 +19,5 @@ makedocs(
     format = Documenter.HTML(mathengine = Documenter.MathJax(Dict(:TeX => Dict(:equationNumbers => Dict(:autoNumber => "AMS"),
     :Macros => Dict(:ket => ["|#1\\rangle", 1],:bra => ["\\langle#1|", 1],),))), prettyurls = false, edit_link = "main"))
 deploydocs(;
-    repo="github.com/rs1909/FMA.git",
+    repo="github.com/rs1909/FMA.git", versions = nothing,
 )
