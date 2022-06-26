@@ -1,4 +1,12 @@
-# FoliationsManifoldsAutoencoders
+# A Julia package to calculate invariant foliations, invariant manifolds and autoencoders
 
-[![Build Status](https://github.com/rs1909/FoliationsManifoldsAutoencoders.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/rs1909/FoliationsManifoldsAutoencoders.jl/actions/workflows/CI.yml?query=branch%3Amain)
-[![Coverage](https://codecov.io/gh/rs1909/FoliationsManifoldsAutoencoders.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/rs1909/FoliationsManifoldsAutoencoders.jl)
+There are two examples for this package, a [10 dimensional synthetic system](examples/synthetic_ten_dimensional/README.md) and 
+a [jointed beam](examples/jointed_beam/README.md)
+
+Before running the examples you need to make sure that the package in in the load path of Julia. This can be done by
+```
+push!(LOAD_PATH,pwd())
+```
+in the root directory of the package.
+
+Note that the examples are computationally intensive. It is advisable to run various commands in parallel, to speed up the process.
