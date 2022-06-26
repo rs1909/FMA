@@ -1,0 +1,13 @@
+name = "FoliationsManifoldsAutoencoders"
+uuid = "69469930-45e8-4f0f-adfa-a6d50af03eb1"
+authors = ["Robert Szalai <robicjedi@gmail.com> and contributors"]
+version = "0.1.0"
+
+[compat]
+julia = "1"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
