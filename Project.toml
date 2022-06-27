@@ -20,3 +20,6 @@ SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 TRS = "8b052949-c101-4ca3-9a7e-43a2532b2fa8"
 TaylorSeries = "6aa5eb33-94cf-58f4-a9d0-e4b2c4fc25ea"
+
+[compat]
+TaylorSeries = "0.12"
