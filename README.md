@@ -10,3 +10,5 @@ push!(LOAD_PATH,pwd())
 in the root directory of the package.
 
 Note that the examples are computationally intensive. It is advisable to run various commands in parallel, to speed up the process.
+
+The documentation of the package is [here](https://rs1909.github.io/FMA/).
