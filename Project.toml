@@ -23,4 +23,6 @@ TaylorSeries = "6aa5eb33-94cf-58f4-a9d0-e4b2c4fc25ea"
 
 [compat]
 Manifolds = "0.8"
+DSP = "0.7"
 SpecialFunctions = "2"
+TaylorSeries = "0.12"
