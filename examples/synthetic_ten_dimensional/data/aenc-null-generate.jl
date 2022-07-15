@@ -8,12 +8,12 @@ function CalculateDecoder(MF, XF)
     return MWr, XWr
 end
 
-function PEV!(MF, XF, x::Array{T,1}, y::Array{T,1}) where T
+function PEV!(mexp, XF, x::Array{T,1}, y::Array{T,1}) where T
     x .= T(0)
     @inbounds for l=1:size(XF,2)
         b = T(1.0)
-        @inbounds for p=1:size(MF.mexp,1)
-            b *= y[p] ^ MF.mexp[p,l]
+        @inbounds for p=1:size(mexp,1)
+            b *= y[p] ^ mexp[p,l]
         end
         @inbounds for k=1:size(XF,1)
             x[k] += b * XF[k,l]
@@ -26,7 +26,7 @@ end
 
 function generate(MF, XF, MW, XW)
     function model!(x, y, p, t)
-        PEV!(MF, XF, vec(x),vec(y))
+        PEV!(MF.mexp, XF, vec(x),vec(y))
         return x
     end
 
