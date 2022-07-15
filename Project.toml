@@ -22,4 +22,5 @@ TRS = "8b052949-c101-4ca3-9a7e-43a2532b2fa8"
 TaylorSeries = "6aa5eb33-94cf-58f4-a9d0-e4b2c4fc25ea"
 
 [compat]
+ManifoldsBase = "0.13"
 SpecialFunctions = "2"
