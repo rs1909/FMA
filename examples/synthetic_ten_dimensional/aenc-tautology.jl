@@ -11,7 +11,7 @@ function execute()
     dataOUTorig = ys
 
     freq = 1/2/pi
-    bb = AENCIndentify(dataINorig, dataOUTorig, Tstep, embedscales, freq, (S=7,W=7); iteration = (aenc=600, map=300))
+    bb = AENCIndentify(dataINorig, dataOUTorig, Tstep, embedscales, freq, (S=9,W=7); iteration = (aenc=2500, map=2500))
 
     @save "FigureData-$(SysName).bson" bb
     return bb

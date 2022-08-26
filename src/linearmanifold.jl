@@ -121,7 +121,15 @@ function getel(M::LinearManifold{ndim, n, false}, X, idx) where {ndim, n}
     return X[idx[2],idx[1]]
 end
 
-function Eval(M::LinearManifold{ndim, n, false}, X, data, topdata = nothing) where {ndim, n}
+function makeCache(M::LinearManifold, X, data, topdata = nothing)
+    return nothing
+end
+
+function updateCache!(DV::Nothing, M::LinearManifold, X, data, topdata = nothing)
+    return nothing
+end
+
+function Eval(M::LinearManifold{ndim, n, false}, X, data, topdata = nothing; DV = nothing) where {ndim, n}
     if topdata == nothing
         return X * data[1]
     else
@@ -131,7 +139,7 @@ function Eval(M::LinearManifold{ndim, n, false}, X, data, topdata = nothing) whe
     return nothing
 end
 
-function Eval(M::LinearManifold{ndim, n, true}, X, data, topdata = nothing) where {ndim, n}
+function Eval(M::LinearManifold{ndim, n, true}, X, data, topdata = nothing; DV = nothing) where {ndim, n}
     if topdata == nothing
 #         @show size(X), size(data[1]), size(data[1][1])
         return transpose(X) * data[1]

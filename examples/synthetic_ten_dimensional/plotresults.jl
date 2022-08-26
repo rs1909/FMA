@@ -140,9 +140,10 @@ savefig(pl, "Koopman.pdf")
 
 
 bbvf2 = executeVF2()
+idvf2 = findfirst(bbvf2[3] .> 0.07)
 
 @load "FigureData-AENC-on-manifold.bson" bb
-id1 = findfirst(bb[3] .> 0.07)
+id1 = min(findfirst(bb[3] .> 0.07),length(bb[3]))
 bbr1 = bb
 @load "FigureData-AENC-densedata.bson" bb
 id2 = findfirst(bb[3] .> 0.07)
@@ -153,12 +154,10 @@ bbr2 = bb
 # @load "FigureData-10dim-KOOPMAN-4.bson" bb
 # id4 = findfirst(bb[3] .> 0.07)
 # bbr4 = bb
-idvf = findfirst(bbvf[3] .> 0.07)
-
-pl = plot(
-     plot([bbr1[1][2:id1], bbr2[1][2:id2], bbvf[1][2:idvf], bbvf2[1][2:idvf]],
-          [bbr1[3][2:id1], bbr2[3][2:id2], bbvf[3][2:idvf], bbvf2[3][2:idvf]], linestyle=[:solid :dash :dot :dashdot],linecolor=[:red :blue :black :darkgreen],xlims=[0.95,3.2],ylims=[0,0.07],xlabel="frequency [rad/s]", ylabel="amplitude", title="(a)",label=["MAN" "ST-1" "VF-1" "VF-2"], legend_position=:topright),
-     plot([bbr1[2][2:id1], bbr2[2][2:id2], bbvf[2][2:idvf], bbvf2[2][2:idvf]],
-          [bbr1[3][2:id1], bbr2[3][2:id2], bbvf[3][2:idvf], bbvf2[3][2:idvf]], linestyle=[:solid :dash :dot :dashdot],linecolor=[:red :blue :black :darkgreen], xlims=[0.001,10.0],ylims=[0,0.07],xlabel="damping ratio [-]", ylabel="amplitude", xscale=:log10, title="(b)",leg=false),
+pl1 = plot([bbr1[1][2:id1], bbr2[1][2:id2], bbvf[1][2:idvf], bbvf2[1][2:idvf2]],
+          [bbr1[3][2:id1], bbr2[3][2:id2], bbvf[3][2:idvf], bbvf2[3][2:idvf2]], linestyle=[:solid :dash :dot :dashdot],linecolor=[:red :blue :black :darkgreen],xlims=[0.95,3.2],ylims=[0,0.07],xlabel="frequency [rad/s]", ylabel="amplitude", title="(a)",label=["MAN" "ST-1" "VF-1" "VF-2"], legend_position=:topright)
+pl2 = plot([bbr1[2][2:id1], bbr2[2][2:id2], bbvf[2][2:idvf], bbvf2[2][2:idvf2]],
+          [bbr1[3][2:id1], bbr2[3][2:id2], bbvf[3][2:idvf], bbvf2[3][2:idvf2]], linestyle=[:solid :dash :dot :dashdot],linecolor=[:red :blue :black :darkgreen], xlims=[0.001,10.0],ylims=[0,0.07],xlabel="damping ratio [-]", ylabel="amplitude", xscale=:log10, title="(b)",leg=false)
+pl = plot(pl1, pl2,
      layout = @layout([b{0.7w} c{0.3w}]), size=(900,div(900,3)),margin=5mm, left_margin=5mm, bottom_margin=5mm, fontsize=14, tickfontsize=14, legend_font_pointsize=14, labelfontsize=14, titlefontsize=14)
 savefig(pl, "AENC-figure.pdf")

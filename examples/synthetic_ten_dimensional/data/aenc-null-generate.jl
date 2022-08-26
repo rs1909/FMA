@@ -41,7 +41,7 @@ function generate(MF, XF, MW, XW)
     Tstep = 0.2
     for j=1:nruns
 #             u0 = ics[:,j] * 1.2
-        u0 = Eval(MW, XW, [ics[:,j] * 0.6])[:,1] # 0.6
+        u0 = Eval(MW, XW, [ics[:,j] * 1.0])[:,1] # 0.6
 #             @show findall(isequal(NaN), u0)
         tspan = (0.0,Tstep*npoints) # 51 intervals with T=0.8 as in Proc Roy Soc Paper
         prob = ODEProblem(model!, u0, tspan)

@@ -81,9 +81,22 @@ function manifold_dimension(M::PolynomialManifold{mdim, ndim, order, field}) whe
     return manifold_dimension(M.M)
 end
 
-function Eval(M::PolynomialManifold{mdim, ndim, order, field}, X, data, topdata = nothing) where {mdim, ndim, order, field}
+function makeCache(M::PolynomialManifold, X, data, topdata = nothing)
+    return ProductRepr(map((x, y) -> makeCache(x, y, data, topdata), M.mlist, X.parts))
+end
+
+function updateCache!(DV, M::PolynomialManifold, X, data, topdata = nothing)
+    map((c, x, y) -> updateCache!(c, x, y, data, topdata), DV.parts, M.mlist, X.parts)
+    return nothing
+end
+
+function Eval(M::PolynomialManifold{mdim, ndim, order, field}, X, data, topdata = nothing; DV = makeCache(M, X, data, topdata)) where {mdim, ndim, order, field}
 #     return mapreduce((x,y) -> begin tmp = Eval(x, y, data, topdata); @show size(tmp); return tmp; end, .+, M.mlist, X.parts)
-    return mapreduce((x,y) -> Eval(x, y, data, topdata), .+, M.mlist, X.parts)
+#     if DV == nothing
+#         return mapreduce((x,y) -> Eval(x, y, data, topdata), .+, M.mlist, X.parts)
+#     else
+        return mapreduce((x,y,dv) -> Eval(x, y, data, topdata, DV=dv), .+, M.mlist, X.parts, DV.parts)
+#     end
 end
 
 function DF(M::PolynomialManifold{mdim, ndim, order, field}, X, data) where {mdim, ndim, order, field}

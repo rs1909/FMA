@@ -142,6 +142,7 @@ import ManifoldsBase.vector_transport_to
 # include("polymethods.jl")
 # include("mapmethods.jl")
 # include("vfmethods.jl")
+include("matrixmanifoldutils.jl")
 include("extrafunctions.jl")
 include("linearmanifold.jl")
 include("restrictedstiefel.jl")

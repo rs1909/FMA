@@ -279,6 +279,7 @@ end
 #
 # -------------------------------------------------------------------------------------
 
+# this acts as a cache for the tensor evaluations and gradients
 struct diadicVectors{T}
     valid_vecs  :: Array{Bool,1}
     valid_bvecs :: Array{Bool,1}
@@ -406,6 +407,23 @@ function tensorVecsRecursive!(DV::diadicVectors{T}, M::TensorManifold{field}, X,
     return nothing
 end
 
+# invalidates vecs that are dependent on node "ii"
+function tensorVecsInvalidate(DV::diadicVectors{T}, M::TensorManifold{field}, ii) where {field, T}
+    DV.valid_vecs[ii] = false
+    # not the root node
+    if ii != 1
+        left = findfirst(isequal(ii), M.children[:,1])
+        right = findfirst(isequal(ii), M.children[:,2])
+        if left != nothing
+            tensorVecsInvalidate(DV, M, left)
+        end
+        if right != nothing
+            tensorVecsInvalidate(DV, M, right)
+        end
+    end
+    return nothing
+end
+
 function tensorHessianRecursive(M::TensorManifold{field}, X, data, ii, d1, d2) where field
     B = X.parts[ii]
     if is_leaf(M, ii)
@@ -465,8 +483,7 @@ function tensorVecs(M::TensorManifold{field}, X, data::Vector{Matrix{T}}; second
 end
 
 # topdata is a multiplication from the left
-function Eval(M::TensorManifold{field}, X, data, topdata = nothing) where field
-    DV = tensorVecs(M, X, data)
+function Eval(M::TensorManifold{field}, X, data, topdata = nothing; DV::diadicVectors = tensorVecs(M, X, data)) where field
     if topdata == nothing
 #         @show size(vecs[1])
         return dropdims(DV.vecs[1], dims=2)
@@ -585,6 +602,27 @@ function tensorBVecsIndexed!(DV::diadicVectors{T}, M::TensorManifold{field}, X, 
     return nothing
 end
 
+# if ii == 0, topdata is invalid.
+# if ii > 0  -> all children nodes get invalidate
+function tensorBVecsInvalidate(DV::diadicVectors{T}, M::TensorManifold{field}, ii) where {field, T}
+    if ii == 0
+        DV.valid_bvecs[1] = false
+        tensorBVecsInvalidate(DV, M, 1)
+    else
+        if is_leaf(M, ii)
+            # do nothing as it has no children
+        else
+            ii_left = M.children[ii,1]
+            ii_right = M.children[ii,2]
+            DV.valid_bvecs[ii_left] = false
+            DV.valid_bvecs[ii_right] = false
+            tensorBVecsInvalidate(DV, M, ii_left)
+            tensorBVecsInvalidate(DV, M, ii_right)
+        end
+    end
+    return nothing
+end
+
 function tensorBVecs!(DV::diadicVectors, M::TensorManifold{field}, X, topdata = nothing; dt::ProductRepr = ProductRepr(), rep::Integer = 0) where field
     if size(DV.vecs[1],2) != 1
         println("only supports full contraction")
@@ -595,6 +633,20 @@ function tensorBVecs!(DV::diadicVectors, M::TensorManifold{field}, X, topdata = 
 #         println("bvecs ", ii)
         tensorBVecsIndexed!(DV, M, X, topdata, ii; dt = dt, rep = rep)
     end
+    return nothing
+end
+
+function makeCache(M::TensorManifold, X, data::Vector{Matrix{T}}, topdata = nothing) where T
+    DV = diadicVectors(T, size(M.children, 1))
+    tensorVecsRecursive!(DV, M, X, data, 1)
+    tensorBVecs!(DV, M, X, topdata)
+    return DV
+end
+
+# update the content which is invalidated
+function updateCache!(DV::diadicVectors, M::TensorManifold, X, data::Vector{Matrix{T}}, topdata = nothing) where T
+    tensorVecsRecursive!(DV, M, X, data, 1)
+    tensorBVecs!(DV, M, X, topdata)
     return nothing
 end
 

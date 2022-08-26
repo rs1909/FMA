@@ -217,8 +217,29 @@ function ISFPadeSetRestriction(M::ISFPadeManifold, B)
     setB(M.M, B)
     return nothing
 end
-    
-function ISFPadeLoss(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, field}, X, dataIN, dataOUT) where {mdim, ndim, Porder, Qorder, Uorder, field}
+
+struct XYcache
+    X::ProductRepr
+    Y::ProductRepr
+end
+
+function makeCache(M::ISFPadeManifold, X, dataIN, dataOUT)
+    return XYcache(makeCache(PadeU(M), PadeUpoint(X), [dataIN]), makeCache(PadeU(M), PadeUpoint(X), [dataOUT]))
+end
+
+function updateCache!(DV::XYcache, M::ISFPadeManifold, X, dataIN, dataOUT, ord, ii)
+    tensorVecsInvalidate(DV.X.parts[ord], PadeU(M).mlist[ord], ii)
+    tensorVecsInvalidate(DV.Y.parts[ord], PadeU(M).mlist[ord], ii)
+    tensorBVecsInvalidate(DV.X.parts[ord], PadeU(M).mlist[ord], ii)
+    tensorBVecsInvalidate(DV.Y.parts[ord], PadeU(M).mlist[ord], ii)
+    tensorBVecsInvalidate(DV.X.parts[ord], PadeU(M).mlist[ord], 0) # surely, L0 has also changed!
+    tensorBVecsInvalidate(DV.Y.parts[ord], PadeU(M).mlist[ord], 0) # surely, L0 has also changed!
+    updateCache!(DV.X, PadeU(M), PadeUpoint(X), [dataIN])
+    updateCache!(DV.Y, PadeU(M), PadeUpoint(X), [dataOUT])
+    return nothing
+end
+
+function ISFPadeLoss(M::ISFPadeManifold, X, dataIN, dataOUT; DV=makeCache(M, X, dataIN, dataOUT))
     datalen = size(dataIN,2)
     reg = 0.0
     for k=2:length(PadeUpoint(X).parts)
@@ -229,8 +250,8 @@ function ISFPadeLoss(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, fiel
 
     scale = AmplitudeScaling(dataIN)
 
-    Uoy = Eval(PadeU(M), PadeUpoint(X), [dataOUT])
-    Uox = Eval(PadeU(M), PadeUpoint(X), [dataIN])
+    Uoy = Eval(PadeU(M), PadeUpoint(X), [dataOUT]; DV=DV.Y)
+    Uox = Eval(PadeU(M), PadeUpoint(X), [dataIN]; DV=DV.X)
     QoUoy = Eval(PadeQ(M), PadeQpoint(X), [Uoy])
     PoUox = Eval(PadeP(M), PadePpoint(X), [Uox])
     L0 = QoUoy .- PoUox
@@ -258,12 +279,12 @@ function ISFPadeLossInfinity(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uord
     return maximum(abs.( L0 ))
 end
 
-function ISFPadeGradientP(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, field}, X, dataIN, dataOUT) where {mdim, ndim, Porder, Qorder, Uorder, field}
+function ISFPadeGradientP(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, field}, X, dataIN, dataOUT; DV=makeCache(M, X, dataIN, dataOUT)) where {mdim, ndim, Porder, Qorder, Uorder, field}
     datalen = size(dataIN,2)
     scale = AmplitudeScaling(dataIN)
 
-    Uoy = Eval(PadeU(M), PadeUpoint(X), [dataOUT])
-    Uox = Eval(PadeU(M), PadeUpoint(X), [dataIN])
+    Uoy = Eval(PadeU(M), PadeUpoint(X), [dataOUT]; DV=DV.Y)
+    Uox = Eval(PadeU(M), PadeUpoint(X), [dataIN]; DV=DV.X)
     QoUoy = Eval(PadeQ(M), PadeQpoint(X), [Uoy])
     PoUox = Eval(PadeP(M), PadePpoint(X), [Uox])
     L0 = (QoUoy .- PoUox) ./ scale
@@ -271,12 +292,12 @@ function ISFPadeGradientP(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder,
     return L0_DF(PadeP(M), PadePpoint(X), nothing, Uox, -1.0*L0, nothing)/datalen
 end
 
-function ISFPadeGradientQ(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, field}, X, dataIN, dataOUT) where {mdim, ndim, Porder, Qorder, Uorder, field}
+function ISFPadeGradientQ(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, field}, X, dataIN, dataOUT; DV=makeCache(M, X, dataIN, dataOUT)) where {mdim, ndim, Porder, Qorder, Uorder, field}
     datalen = size(dataIN,2)
     scale = AmplitudeScaling(dataIN)
 
-    Uoy = Eval(PadeU(M), PadeUpoint(X), [dataOUT])
-    Uox = Eval(PadeU(M), PadeUpoint(X), [dataIN])
+    Uoy = Eval(PadeU(M), PadeUpoint(X), [dataOUT]; DV=DV.Y)
+    Uox = Eval(PadeU(M), PadeUpoint(X), [dataIN]; DV=DV.X)
     QoUoy = Eval(PadeQ(M), PadeQpoint(X), [Uoy])
     PoUox = Eval(PadeP(M), PadePpoint(X), [Uox])
     L0 = (QoUoy .- PoUox) ./ scale
@@ -284,17 +305,20 @@ function ISFPadeGradientQ(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder,
     return L0_DF(PadeQ(M), PadeQpoint(X), nothing, Uoy, L0, nothing)/datalen
 end
 
-function gradUmonomial(M::LinearManifold, X, L0_JPoUox, L0_JQoUoy, dataIN, dataOUT)
+function gradUmonomial(M::LinearManifold, X, L0_JPoUox, L0_JQoUoy, dataIN, dataOUT, _p1, _p2)
     datalen = size(dataIN,2)
     return (L0_DF(M, X, nothing, dataOUT, L0_JQoUoy, nothing) .- L0_DF(M, X, nothing, dataIN, L0_JPoUox, nothing))/datalen
 end
 
-function ISFPadeGradientU(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, field}, X, dataIN, dataOUT, ord, ii) where {mdim, ndim, Porder, Qorder, Uorder, field}
+# Calculate the gradient with respect to a node in U
+# ord -> monomial order
+# ii  -> index of the node 
+function ISFPadeGradientU(M::ISFPadeManifold, X, dataIN, dataOUT, ord, ii; DV=makeCache(M, X, dataIN, dataOUT))
     datalen = size(dataIN,2)
     scale = AmplitudeScaling(dataIN)
 
-    Uoy = Eval(PadeU(M), PadeUpoint(X), [dataOUT])
-    Uox = Eval(PadeU(M), PadeUpoint(X), [dataIN])
+    Uoy = Eval(PadeU(M), PadeUpoint(X), [dataOUT]; DV=DV.Y)
+    Uox = Eval(PadeU(M), PadeUpoint(X), [dataIN]; DV=DV.X)
     QoUoy = Eval(PadeQ(M), PadeQpoint(X), [Uoy])
     PoUox = Eval(PadeP(M), PadePpoint(X), [Uox])
     L0 = (QoUoy .- PoUox) ./ scale
@@ -307,12 +331,12 @@ function ISFPadeGradientU(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder,
     if ord == 1
         return (L0_DF(PadeU(M).mlist[1], PadeUpoint(X).parts[1], nothing, dataOUT, L0_JQoUoy, ii) .- L0_DF(PadeU(M).mlist[1], PadeUpoint(X).parts[1], nothing, dataIN, L0_JPoUox, ii))/datalen
     else
-        DVUoy = tensorVecs(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], [dataOUT])
-        tensorBVecs!(DVUoy, PadeU(M).mlist[ord], PadeUpoint(X).parts[ord])
-        DVUox = tensorVecs(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], [dataIN])
-        tensorBVecs!(DVUox, PadeU(M).mlist[ord], PadeUpoint(X).parts[ord])
-        grad = (L0_DF(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], DVUoy, dataOUT, L0_JQoUoy, ii) 
-            .- L0_DF(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], DVUox, dataIN, L0_JPoUox, ii) )/datalen
+#         DVUoy = tensorVecs(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], [dataOUT])
+#         tensorBVecs!(DV.Y, PadeU(M).mlist[ord], PadeUpoint(X).parts[ord])
+#         DVUox = tensorVecs(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], [dataIN])
+#         tensorBVecs!(DV.X, PadeU(M).mlist[ord], PadeUpoint(X).parts[ord])
+        grad = (L0_DF(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], DV.Y.parts[ord], dataOUT, L0_JQoUoy, ii) 
+            .- L0_DF(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], DV.X.parts[ord], dataIN, L0_JPoUox, ii) )/datalen
         if ii == 1
 #             grad .+= LAMBDA * sign.(PadeUpoint(X).parts[ord].parts[ii]) # L1 regularisation
             grad .+= LAMBDA * PadeUpoint(X).parts[ord].parts[ii] # L2 regularisation
@@ -322,12 +346,12 @@ function ISFPadeGradientU(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder,
 #     return gradUmonomial(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], L0_JPoUox, L0_JQoUoy, dataIN, dataOUT)
 end
 
-function gradUmonomial(M::TensorManifold, X, L0_JPoUox, L0_JQoUoy, dataIN, dataOUT)
+function gradUmonomial(M::TensorManifold, X, L0_JPoUox, L0_JQoUoy, dataIN, dataOUT, DVUox, DVUoy)
     datalen = size(dataIN,2)
-    DVUoy = tensorVecs(M, X, [dataOUT])
-    tensorBVecs!(DVUoy, M, X)
-    DVUox = tensorVecs(M, X, [dataIN])
-    tensorBVecs!(DVUox, M, X)
+#     DVUoy = tensorVecs(M, X, [dataOUT])
+#     tensorBVecs!(DVUoy, M, X)
+#     DVUox = tensorVecs(M, X, [dataIN])
+#     tensorBVecs!(DVUox, M, X)
     
     # this is missing the penalty term
     function tmp(ii)
@@ -342,12 +366,12 @@ function gradUmonomial(M::TensorManifold, X, L0_JPoUox, L0_JQoUoy, dataIN, dataO
     return ProductRepr(map(tmp, collect(1:length(X.parts)))...)
 end
 
-function ISFPadeGradientAll(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, field}, X, dataIN, dataOUT) where {mdim, ndim, Porder, Qorder, Uorder, field}
+function ISFPadeGradientAll(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, field}, X, dataIN, dataOUT; DV=makeCache(M, X, dataIN, dataOUT)) where {mdim, ndim, Porder, Qorder, Uorder, field}
     datalen = size(dataIN,2)
     scale = AmplitudeScaling(dataIN)
     
-    Uoy = Eval(PadeU(M), PadeUpoint(X), [dataOUT])
-    Uox = Eval(PadeU(M), PadeUpoint(X), [dataIN])
+    Uoy = Eval(PadeU(M), PadeUpoint(X), [dataOUT]; DV=DV.Y)
+    Uox = Eval(PadeU(M), PadeUpoint(X), [dataIN]; DV=DV.X)
     QoUoy = Eval(PadeQ(M), PadeQpoint(X), [Uoy])
     PoUox = Eval(PadeP(M), PadePpoint(X), [Uox])
     L0 = (QoUoy .- PoUox) ./ scale
@@ -361,22 +385,22 @@ function ISFPadeGradientAll(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorde
     L0_JQoUoy = dropdims(sum(JQoUoy .* reshape(L0, size(L0,1), 1, size(L0,2)), dims=1), dims=1)
     L0_JPoUox = dropdims(sum(JPoUox .* reshape(L0, size(L0,1), 1, size(L0,2)), dims=1), dims=1)
     
-    GU = ProductRepr( map( (M,X) -> gradUmonomial(M, X, L0_JPoUox, L0_JQoUoy, dataIN, dataOUT), PadeU(M).mlist, PadeUpoint(X).parts) )
+    GU = ProductRepr( map( (M,X, dvx, dvy) -> gradUmonomial(M, X, L0_JPoUox, L0_JQoUoy, dataIN, dataOUT, dvx, dvy), PadeU(M).mlist, PadeUpoint(X).parts, DV.X.parts, DV.Y.parts) )
     print("*")
     return ProductRepr(GP, GQ, GU)
 end
 
-function ISFPadeRiemannianGradient(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, field}, X, dataIN, dataOUT) where {mdim, ndim, Porder, Qorder, Uorder, field}
-    gr = ISFPadeGradientAll(M, X, dataIN, dataOUT)
+function ISFPadeRiemannianGradient(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, field}, X, dataIN, dataOUT; DV=makeCache(M, X, dataIN, dataOUT)) where {mdim, ndim, Porder, Qorder, Uorder, field}
+    gr = ISFPadeGradientAll(M, X, dataIN, dataOUT; DV=DV)
     return project(M, X, gr)
 end
 
-function ISFPadeGradientHessianP(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, field}, X, dataIN, dataOUT) where {mdim, ndim, Porder, Qorder, Uorder, field}
+function ISFPadeGradientHessianP(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, field}, X, dataIN, dataOUT; DV=makeCache(M, X, dataIN, dataOUT)) where {mdim, ndim, Porder, Qorder, Uorder, field}
     datalen = size(dataIN,2)
     scale = AmplitudeScaling(dataIN)
 
-    Uoy = Eval(PadeU(M), PadeUpoint(X), [dataOUT])
-    Uox = Eval(PadeU(M), PadeUpoint(X), [dataIN])
+    Uoy = Eval(PadeU(M), PadeUpoint(X), [dataOUT]; DV=DV.Y)
+    Uox = Eval(PadeU(M), PadeUpoint(X), [dataIN]; DV=DV.X)
     QoUoy = Eval(PadeQ(M), PadeQpoint(X), [Uoy])
     PoUox = Eval(PadeP(M), PadePpoint(X), [Uox])
     L0 = (QoUoy .- PoUox) ./ scale
@@ -388,12 +412,12 @@ function ISFPadeGradientHessianP(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, 
     return grad, hess
 end
 
-function ISFPadeGradientHessianQ(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, field}, X, dataIN, dataOUT) where {mdim, ndim, Porder, Qorder, Uorder, field}
+function ISFPadeGradientHessianQ(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, field}, X, dataIN, dataOUT; DV=makeCache(M, X, dataIN, dataOUT)) where {mdim, ndim, Porder, Qorder, Uorder, field}
     datalen = size(dataIN,2)
     scale = AmplitudeScaling(dataIN)
 
-    Uoy = Eval(PadeU(M), PadeUpoint(X), [dataOUT])
-    Uox = Eval(PadeU(M), PadeUpoint(X), [dataIN])
+    Uoy = Eval(PadeU(M), PadeUpoint(X), [dataOUT]; DV=DV.Y)
+    Uox = Eval(PadeU(M), PadeUpoint(X), [dataIN]; DV=DV.X)
     QoUoy = Eval(PadeQ(M), PadeQpoint(X), [Uoy])
     PoUox = Eval(PadeP(M), PadePpoint(X), [Uox])
     L0 = (QoUoy .- PoUox) ./ scale
@@ -403,7 +427,7 @@ function ISFPadeGradientHessianQ(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, 
     return grad, hess
 end
 
-function ISFPadeGradientHessianU(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, field}, X, dataIN, dataOUT, ord, ii) where {mdim, ndim, Porder, Qorder, Uorder, field}
+function ISFPadeGradientHessianU(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, field}, X, dataIN, dataOUT, ord, ii; DV=makeCache(M, X, dataIN, dataOUT)) where {mdim, ndim, Porder, Qorder, Uorder, field}
 #       DUox^T x JPoUox^T x JPoUox x DUox   -> 1
 #     + DUoy^T x JQoUoy^T x JQoUoy x DUoy   -> 2
 #     - DUox^T x JPoUox^T x JQoUoy x DUoy   -> 3
@@ -415,8 +439,8 @@ function ISFPadeGradientHessianU(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, 
     datalen = size(dataIN,2)
     scale = AmplitudeScaling(dataIN)
 
-    Uoy = Eval(PadeU(M), PadeUpoint(X), [dataOUT])
-    Uox = Eval(PadeU(M), PadeUpoint(X), [dataIN])
+    Uoy = Eval(PadeU(M), PadeUpoint(X), [dataOUT]; DV=DV.Y)
+    Uox = Eval(PadeU(M), PadeUpoint(X), [dataIN]; DV=DV.X)
     QoUoy = Eval(PadeQ(M), PadeQpoint(X), [Uoy])
     PoUox = Eval(PadeP(M), PadePpoint(X), [Uox])
     L0 = (QoUoy .- PoUox) ./ scale
@@ -440,13 +464,15 @@ function ISFPadeGradientHessianU(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, 
         grad = (L0_DF(PadeU(M).mlist[1], PadeUpoint(X).parts[1], nothing, dataOUT, L0_JQoUoy, ii) .- L0_DF(PadeU(M).mlist[1], PadeUpoint(X).parts[1], nothing, dataIN, L0_JPoUox, ii))/datalen
         hess = DFT_JFT_JF_DF(PadeU(M).mlist[ord], nothing, nothing, JPoUox, JQoUoy, L0J2PoUox, L0J2QoUoy, dataIN, dataOUT, ii; scale=scale)/datalen
     else
-        push!(t, time())
-        DVUoy = tensorVecs(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], [dataOUT])
-        DVUox = tensorVecs(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], [dataIN])
-        push!(t, time())
-        tensorBVecs!(DVUoy, PadeU(M).mlist[ord], PadeUpoint(X).parts[ord])
-        tensorBVecs!(DVUox, PadeU(M).mlist[ord], PadeUpoint(X).parts[ord])
-        push!(t, time())
+#         push!(t, time())
+#         DVUoy = tensorVecs(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], [dataOUT])
+#         DVUox = tensorVecs(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], [dataIN])
+#         push!(t, time())
+#         tensorBVecs!(DVUoy, PadeU(M).mlist[ord], PadeUpoint(X).parts[ord])
+#         tensorBVecs!(DVUox, PadeU(M).mlist[ord], PadeUpoint(X).parts[ord])
+#         push!(t, time())
+        DVUox = DV.X.parts[ord]
+        DVUoy = DV.Y.parts[ord]
         # grad_U = L0^T (JQoUoy x DUoy - JPoUox x DUox)
         grad = (L0_DF(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], DVUoy, dataOUT, L0_JQoUoy, ii) 
             .- L0_DF(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], DVUox, dataIN, L0_JPoUox, ii))/datalen
@@ -697,7 +723,10 @@ end
 # GradientHessian = (MF, XF) -> ISFPadeGradientHessianU(MF, XF, dataIN, dataOUT, ord, ii)
 # Msub = PadeU(M1).M.mlist[ord].mlist[ii]
 # Xsub = PadeUpoint(x1).parts[ord].parts[ii]
-function trust_region!(MF, XF, Loss, Gradient, GradientHessian, Msub, Xsub, retraction, radius, radius_max; manifold = true, itmax = 5, trmax = 4)
+# ----------------
+# needs to use cache, but only needs updating for U components
+# problem: How to check if update is needed? Use a callback!
+function trust_region!(MF, XF, Loss, Gradient, GradientHessian, Cache, UpdateCache, Msub, Xsub, retraction, radius, radius_max; manifold = true, itmax = 5, trmax = 4)
 #     print(":")
     if manifold
         GF, HF = GradientHessian(MF, XF)
@@ -712,6 +741,7 @@ function trust_region!(MF, XF, Loss, Gradient, GradientHessian, Msub, Xsub, retr
     stop = false
     for iit=1:itmax
         print("|")
+        UpdateCache(Cache)
         loss = Loss(MF, XF)
         # update hessian at every 10 iterations
         if mod(iit,10) == 0 && (iit < itmax)
@@ -757,7 +787,8 @@ function trust_region!(MF, XF, Loss, Gradient, GradientHessian, Msub, Xsub, retr
             else
                 Xsub .+= reshape(delta[:,qi], size(G))
             end
-
+            
+            UpdateCache(Cache)
             nloss = Loss(MF, XF)
             rho = (loss - nloss) / ( - dot(delta[:,qi], G_mat) - dot(delta[:,qi], H_mat*delta[:,qi])/2)
             if nloss >= loss
@@ -964,18 +995,19 @@ Solves the optimisation problem
 The method is block coordinate descent, where we optimise for matrix coefficients of the representation in a cyclic manner and also by choosing the coefficient whose gradient is the gratest for optimisation.
 """
 function GaussSouthwellOptim(Misf, Xisf, dataIN, dataOUT, scale, Tstep, nearest; name = "", maxit=8000, gradstop = 1e-10)
+    Cache = makeCache(Misf, Xisf, dataIN, dataOUT)
     loss = ISFPadeLoss(Misf, Xisf, dataIN, dataOUT)
     println("Initial L=", loss)
     UPD_GRAD = 3
     radius = 0.5
     radius_max = 10.0
-    grall = ISFPadeGradientAll(Misf, Xisf, dataIN, dataOUT)
+    grall = ISFPadeRiemannianGradient(Misf, Xisf, dataIN, dataOUT; DV=Cache)
     grall .= project(Misf, Xisf, grall)
     loss_table = ones(2*UPD_GRAD+1)
     id = (1,0,0)
     for it=1:maxit
         if mod(it,UPD_GRAD) == 0
-            grall .= ISFPadeGradientAll(Misf, Xisf, dataIN, dataOUT)
+            grall .= ISFPadeRiemannianGradient(Misf, Xisf, dataIN, dataOUT; DV=Cache)
             grall .= project(Misf, Xisf, grall)
         end
 #         mx, id = MaximumNorm(grall)
@@ -991,9 +1023,10 @@ function GaussSouthwellOptim(Misf, Xisf, dataIN, dataOUT, scale, Tstep, nearest;
             print(it, ". P ")
             # this is linear so the radius can be anything
             #=radius ==# trust_region!(Misf, Xisf, 
-                    (MF, XF) -> ISFPadeLoss(MF, XF, dataIN, dataOUT),
-                    (MF, XF) -> ISFPadeGradientP(MF, XF, dataIN, dataOUT),
-                    (MF, XF) -> ISFPadeGradientHessianP(MF, XF, dataIN, dataOUT),
+                    (MF, XF) -> ISFPadeLoss(MF, XF, dataIN, dataOUT; DV=Cache),
+                    (MF, XF) -> ISFPadeGradientP(MF, XF, dataIN, dataOUT; DV=Cache),
+                    (MF, XF) -> ISFPadeGradientHessianP(MF, XF, dataIN, dataOUT; DV=Cache),
+                    Cache, (c) -> (),
                     PadeP(Misf), PadePpoint(Xisf), PadeP(Misf).R,
                     radius_max, radius_max; itmax = 20, manifold = true)
             # the frequencies can only change here
@@ -1011,9 +1044,10 @@ function GaussSouthwellOptim(Misf, Xisf, dataIN, dataOUT, scale, Tstep, nearest;
                 grall.parts[2] .= 0
                 print(it, ". Q ")
                 #=radius ==# trust_region!(Misf, Xisf, 
-                        (MF, XF) -> ISFPadeLoss(MF, XF, dataIN, dataOUT),
-                        (MF, XF) -> ISFPadeGradientQ(MF, XF, dataIN, dataOUT),
-                        (MF, XF) -> ISFPadeGradientHessianQ(MF, XF, dataIN, dataOUT),
+                        (MF, XF) -> ISFPadeLoss(MF, XF, dataIN, dataOUT; DV=Cache),
+                        (MF, XF) -> ISFPadeGradientQ(MF, XF, dataIN, dataOUT; DV=Cache),
+                        (MF, XF) -> ISFPadeGradientHessianQ(MF, XF, dataIN, dataOUT; DV=Cache),
+                        Cache, (c) -> (),
                         PadeQ(Misf), PadeQpoint(Xisf), PadeQ(Misf).R,
                         radius_max, radius_max; itmax = 20, manifold = true)
             end
@@ -1025,20 +1059,24 @@ function GaussSouthwellOptim(Misf, Xisf, dataIN, dataOUT, scale, Tstep, nearest;
                 grall.parts[3].parts[1] .= 0
                 print(it, ". U ", ord, " ii ", ii)
                 radius = trust_region!(Misf, Xisf, 
-                        (MF, XF) -> ISFPadeLoss(MF, XF, dataIN, dataOUT),
-                        (MF, XF) -> ISFPadeGradientU(MF, XF, dataIN, dataOUT, ord, ii),
-                        (MF, XF) -> ISFPadeGradientHessianU(MF, XF, dataIN, dataOUT, ord, ii),
+                        (MF, XF) -> ISFPadeLoss(MF, XF, dataIN, dataOUT; DV=Cache),
+                        (MF, XF) -> ISFPadeGradientU(MF, XF, dataIN, dataOUT, ord, ii; DV=Cache),
+                        (MF, XF) -> ISFPadeGradientHessianU(MF, XF, dataIN, dataOUT, ord, ii; DV=Cache),
+                        Cache, (c) -> (),
                         PadeU(Misf).mlist[ord], PadeUpoint(Xisf).parts[ord], PadeU(Misf).R.retractions[ord],
                         radius, radius_max; itmax = 20, manifold = true)
             else
+                # this is the most complicated part
+                # The old style -- direct hessian calculation
                 ord = id[2]
                 ii = id[3]
                 grall.parts[3].parts[ord].parts[ii] .= 0
                 print(it, ". U ", ord, " ii ", ii)
                 radius = trust_region!(Misf, Xisf, 
-                        (MF, XF) -> ISFPadeLoss(MF, XF, dataIN, dataOUT),
-                        (MF, XF) -> ISFPadeGradientU(MF, XF, dataIN, dataOUT, ord, ii),
-                        (MF, XF) -> ISFPadeGradientHessianU(MF, XF, dataIN, dataOUT, ord, ii),
+                        (MF, XF) -> ISFPadeLoss(MF, XF, dataIN, dataOUT; DV=Cache),
+                        (MF, XF) -> ISFPadeGradientU(MF, XF, dataIN, dataOUT, ord, ii; DV=Cache),
+                        (MF, XF) -> ISFPadeGradientHessianU(MF, XF, dataIN, dataOUT, ord, ii; DV=Cache),
+                        Cache, (cc) -> updateCache!(cc, Misf, Xisf, dataIN, dataOUT, ord, ii),
                         PadeU(Misf).M.manifolds[ord].manifolds[ii], PadeUpoint(Xisf).parts[ord].parts[ii], PadeU(Misf).R.retractions[ord].retractions[ii],
                         radius, radius_max; itmax = 20, manifold = true)
             end
