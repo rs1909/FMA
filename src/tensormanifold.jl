@@ -494,7 +494,7 @@ function Eval(M::TensorManifold{field}, X, data, topdata = nothing; DV::diadicVe
 end
 
 
-function BVpmulBmulV!(bvecs_ii::AbstractArray{T,3}, B::AbstractArray{T,2}, vecs_sibling::AbstractArray{T,3}, bvecs_parent::AbstractArray{T,3}) where T
+function BVpmulBmulV!(bvecs_ii::AbstractArray{T,3}, B::AbstractArray{U,2}, vecs_sibling::AbstractArray{T,3}, bvecs_parent::AbstractArray{T,3}) where {T, U}
     for k=1:size(bvecs_ii,3)
         for r=1:size(B,2)
             for q=1:size(vecs_sibling,1)
@@ -509,7 +509,7 @@ function BVpmulBmulV!(bvecs_ii::AbstractArray{T,3}, B::AbstractArray{T,2}, vecs_
     return nothing
 end
 
-function VmulBmulBVp!(bvecs_ii::AbstractArray{T,3}, vecs_sibling::AbstractArray{T,3}, B::AbstractArray{T,2}, bvecs_parent::AbstractArray{T,3}) where T
+function VmulBmulBVp!(bvecs_ii::AbstractArray{T,3}, vecs_sibling::AbstractArray{T,3}, B::AbstractArray{U,2}, bvecs_parent::AbstractArray{T,3}) where {T, U}
     for k=1:size(bvecs_ii,3)
         for r=1:size(B,2)
             for q=1:size(bvecs_ii,2)
