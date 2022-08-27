@@ -650,6 +650,12 @@ function updateCache!(DV::diadicVectors, M::TensorManifold, X, data::Vector{Matr
     return nothing
 end
 
+function updateCachePartial!(DV::diadicVectors, M::TensorManifold, X, data::Vector{Matrix{T}}, ii, topdata = nothing) where T
+    tensorVecsRecursive!(DV, M, X, data, 1)
+    tensorBVecsIndexed!(DV, M, X, topdata, ii)
+    return nothing
+end
+
 # So the gradient of
 # L0 = QoUoy - PoUox
 # loss = 1/2 L0^T . L0

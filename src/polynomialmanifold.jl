@@ -90,6 +90,13 @@ function updateCache!(DV, M::PolynomialManifold, X, data, topdata = nothing)
     return nothing
 end
 
+function updateCachePartial!(DV, M::PolynomialManifold, X, data, ord, ii, topdata = nothing)
+    if ord > 1
+        updateCachePartial!(DV.parts[ord], M.mlist[ord], X.parts[ord], data, ii, topdata)
+    end
+    return nothing
+end
+
 function Eval(M::PolynomialManifold{mdim, ndim, order, field}, X, data, topdata = nothing; DV = makeCache(M, X, data, topdata)) where {mdim, ndim, order, field}
 #     return mapreduce((x,y) -> begin tmp = Eval(x, y, data, topdata); @show size(tmp); return tmp; end, .+, M.mlist, X.parts)
 #     if DV == nothing

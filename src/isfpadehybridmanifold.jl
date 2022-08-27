@@ -228,14 +228,26 @@ function makeCache(M::ISFPadeManifold, X, dataIN, dataOUT)
 end
 
 function updateCache!(DV::XYcache, M::ISFPadeManifold, X, dataIN, dataOUT, ord, ii)
+#     tensorVecsInvalidate(DV.X.parts[ord], PadeU(M).mlist[ord], ii)
+#     tensorVecsInvalidate(DV.Y.parts[ord], PadeU(M).mlist[ord], ii)
+#     tensorBVecsInvalidate(DV.X.parts[ord], PadeU(M).mlist[ord], ii)
+#     tensorBVecsInvalidate(DV.Y.parts[ord], PadeU(M).mlist[ord], ii)
+#     tensorBVecsInvalidate(DV.X.parts[ord], PadeU(M).mlist[ord], 0) # surely, L0 has also changed!
+#     tensorBVecsInvalidate(DV.Y.parts[ord], PadeU(M).mlist[ord], 0) # surely, L0 has also changed!
+    updateCache!(DV.X, PadeU(M), PadeUpoint(X), [dataIN])
+    updateCache!(DV.Y, PadeU(M), PadeUpoint(X), [dataOUT])
+    return nothing
+end
+
+function updateCachePartial!(DV::XYcache, M::ISFPadeManifold, X, dataIN, dataOUT, ord, ii)
     tensorVecsInvalidate(DV.X.parts[ord], PadeU(M).mlist[ord], ii)
     tensorVecsInvalidate(DV.Y.parts[ord], PadeU(M).mlist[ord], ii)
     tensorBVecsInvalidate(DV.X.parts[ord], PadeU(M).mlist[ord], ii)
     tensorBVecsInvalidate(DV.Y.parts[ord], PadeU(M).mlist[ord], ii)
     tensorBVecsInvalidate(DV.X.parts[ord], PadeU(M).mlist[ord], 0) # surely, L0 has also changed!
     tensorBVecsInvalidate(DV.Y.parts[ord], PadeU(M).mlist[ord], 0) # surely, L0 has also changed!
-    updateCache!(DV.X, PadeU(M), PadeUpoint(X), [dataIN])
-    updateCache!(DV.Y, PadeU(M), PadeUpoint(X), [dataOUT])
+    updateCachePartial!(DV.X, PadeU(M), PadeUpoint(X), [dataIN], ord, ii)
+    updateCachePartial!(DV.Y, PadeU(M), PadeUpoint(X), [dataOUT], ord, ii)
     return nothing
 end
 
@@ -726,7 +738,7 @@ end
 # ----------------
 # needs to use cache, but only needs updating for U components
 # problem: How to check if update is needed? Use a callback!
-function trust_region!(MF, XF, Loss, Gradient, GradientHessian, Cache, UpdateCache, Msub, Xsub, retraction, radius, radius_max; manifold = true, itmax = 5, trmax = 4)
+function trust_region!(MF, XF, Loss, Gradient, GradientHessian, Cache, UpdateCachePartial, Msub, Xsub, retraction, radius, radius_max; manifold = true, itmax = 5, trmax = 4)
 #     print(":")
     if manifold
         GF, HF = GradientHessian(MF, XF)
@@ -741,7 +753,7 @@ function trust_region!(MF, XF, Loss, Gradient, GradientHessian, Cache, UpdateCac
     stop = false
     for iit=1:itmax
         print("|")
-        UpdateCache(Cache)
+        UpdateCachePartial(Cache)
         loss = Loss(MF, XF)
         # update hessian at every 10 iterations
         if mod(iit,10) == 0 && (iit < itmax)
@@ -787,8 +799,7 @@ function trust_region!(MF, XF, Loss, Gradient, GradientHessian, Cache, UpdateCac
             else
                 Xsub .+= reshape(delta[:,qi], size(G))
             end
-            
-            UpdateCache(Cache)
+            UpdateCachePartial(Cache)
             nloss = Loss(MF, XF)
             rho = (loss - nloss) / ( - dot(delta[:,qi], G_mat) - dot(delta[:,qi], H_mat*delta[:,qi])/2)
             if nloss >= loss
@@ -1076,7 +1087,7 @@ function GaussSouthwellOptim(Misf, Xisf, dataIN, dataOUT, scale, Tstep, nearest;
                         (MF, XF) -> ISFPadeLoss(MF, XF, dataIN, dataOUT; DV=Cache),
                         (MF, XF) -> ISFPadeGradientU(MF, XF, dataIN, dataOUT, ord, ii; DV=Cache),
                         (MF, XF) -> ISFPadeGradientHessianU(MF, XF, dataIN, dataOUT, ord, ii; DV=Cache),
-                        Cache, (cc) -> updateCache!(cc, Misf, Xisf, dataIN, dataOUT, ord, ii),
+                        Cache, (cc) -> updateCachePartial!(cc, Misf, Xisf, dataIN, dataOUT, ord, ii),
                         PadeU(Misf).M.manifolds[ord].manifolds[ii], PadeUpoint(Xisf).parts[ord].parts[ii], PadeU(Misf).R.retractions[ord].retractions[ii],
                         radius, radius_max; itmax = 20, manifold = true)
             end
