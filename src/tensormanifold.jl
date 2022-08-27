@@ -797,6 +797,7 @@ end
 
 # same as wDF, except that it only applies to node ii
 function L0_DF(M::TensorManifold{field}, X, DV, data, L0, ii) where field
+#     t0 = time()
     if is_leaf(M, ii)
         XO = zeros(size(data,1), size(DV.bvecs[ii],2))
         for q=1:size(XO,2)
@@ -821,6 +822,8 @@ function L0_DF(M::TensorManifold{field}, X, DV, data, L0, ii) where field
             end
         end
     end
+#     t1 = time()
+#     println("\n -> L0_DF = ", 100*(t1-t0))
     return XO
 end
 
@@ -861,10 +864,10 @@ function node_XO!(XO::AbstractArray{T,4}, coreX::AbstractArray{T,3}, coreY::Abst
     s_r = size(Xvecs_r,1)
     for l=1:size(coreX,3), p2 = 1:s_l, r2 = 1:s_r, q2 = 1:size(XO,4), q1 = 1:size(XO,2), r1 = 1:s_r, p1 = 1:s_l
         @inbounds XO[p1 + (r1-1)*s_l,q1,p2 + (r2-1)*s_l,q2] += (
-            Xvecs_l[p1,1,l] * Xvecs_r[r1,1,l] * coreX[q1,q2,l] * Xvecs_l[p2,1,l] * Xvecs_r[r2,1,l]
-            + Yvecs_l[p1,1,l] * Yvecs_r[r1,1,l] * coreY[q1,q2,l] * Yvecs_l[p2,1,l] * Yvecs_r[r2,1,l]
-            - Xvecs_l[p1,1,l] * Xvecs_r[r1,1,l] * coreXY[q1,q2,l] * Yvecs_l[p2,1,l] * Yvecs_r[r2,1,l]
-            - Xvecs_l[p2,1,l] * Xvecs_r[r2,1,l] * coreXY[q2,q1,l] * Yvecs_l[p1,1,l] * Yvecs_r[r1,1,l])
+            Xvecs_l[p1,1,l] * Xvecs_r[r1,1,l] * (coreX[q1,q2,l] * Xvecs_l[p2,1,l] * Xvecs_r[r2,1,l]
+            - coreXY[q1,q2,l] * Yvecs_l[p2,1,l] * Yvecs_r[r2,1,l])
+            + Yvecs_l[p1,1,l] * Yvecs_r[r1,1,l] * (coreY[q1,q2,l] * Yvecs_l[p2,1,l] * Yvecs_r[r2,1,l]
+            - coreXY[q2,q1,l] * Xvecs_l[p2,1,l] * Xvecs_r[r2,1,l]))
     end
     nothing
 end
@@ -884,30 +887,47 @@ end
 function DFT_JFT_JF_DF(M::TensorManifold{field}, DVX::diadicVectors{T}, DVY::diadicVectors{T}, JX::AbstractArray{T,3}, JY::AbstractArray{T,3},
 #                      L0J2PoUox,                 L0J2QoUoy,                 dataIN,                     dataOUT,                   ii)
                        L0J2X::AbstractArray{T,3}, L0J2Y::AbstractArray{T,3}, dataX::AbstractArray{T,2},  dataY::AbstractArray{T,2}, ii; scale = alwaysone()) where {field, T}
+#     t0 = time()
     # DF is left_vec x right_vec x bottom_vec
     # bottom_vec is the output, and it is a matrix, so it needs to be multiplied with JF
     coreX = zeros(T, size(DVX.bvecs[ii],2), size(DVX.bvecs[ii],2), size(dataX,2))
     coreY = zeros(T, size(DVY.bvecs[ii],2), size(DVY.bvecs[ii],2), size(dataY,2))
     coreXY = zeros(T, size(DVX.bvecs[ii],2), size(DVX.bvecs[ii],2), size(dataX,2))
 
-    for l=1:size(coreX,3), q1 = 1:size(DVX.bvecs[ii],2), q2 = 1:size(DVX.bvecs[ii],2), k1 = 1:size(JX,2), k2 = 1:size(JX,2)
-        for s = 1:size(JX,1)
-            @inbounds coreX[q1,q2,l] += DVX.bvecs[ii][k1,q1,l] * JX[s,k1,l] * JX[s,k2,l] * DVX.bvecs[ii][k2,q2,l] / scale[l]
-            @inbounds coreY[q1,q2,l] += DVY.bvecs[ii][k1,q1,l] * JY[s,k1,l] * JY[s,k2,l] * DVY.bvecs[ii][k2,q2,l] / scale[l]
-            @inbounds coreXY[q1,q2,l] += DVX.bvecs[ii][k1,q1,l] * JX[s,k1,l] * JY[s,k2,l] * DVY.bvecs[ii][k2,q2,l] / scale[l]
+    for l=1:size(coreX,3), q1 = 1:size(DVX.bvecs[ii],2), q2 = 1:size(DVX.bvecs[ii],2)
+        cX = zero(T)
+        cY = zero(T)
+        cXY = zero(T)
+        cnX = zero(T)
+        cnY = zero(T)
+        for k1 = 1:size(JX,2), k2 = 1:size(JX,2)
+            cpX = zero(T)
+            cpY = zero(T)
+            cpXY = zero(T)
+            for s = 1:size(JX,1)
+                @inbounds cpX += JX[s,k1,l] * JX[s,k2,l]
+                @inbounds cpY += JY[s,k1,l] * JY[s,k2,l]
+                @inbounds cpXY += JX[s,k1,l] * JY[s,k2,l]
+            end
+            @inbounds cX += cpX * DVX.bvecs[ii][k1,q1,l] * DVX.bvecs[ii][k2,q2,l]
+            @inbounds cY += cpY * DVY.bvecs[ii][k1,q1,l] * DVY.bvecs[ii][k2,q2,l]
+            @inbounds cXY += cpXY * DVX.bvecs[ii][k1,q1,l] * DVY.bvecs[ii][k2,q2,l]
+            @inbounds cnX -= DVX.bvecs[ii][k1,q1,l] * L0J2X[k1,k2,l] * DVX.bvecs[ii][k2,q2,l]
+            @inbounds cnY += DVY.bvecs[ii][k1,q1,l] * L0J2Y[k1,k2,l] * DVY.bvecs[ii][k2,q2,l]
         end
-        @inbounds coreX[q1,q2,l] -= DVX.bvecs[ii][k1,q1,l] * L0J2X[k1,k2,l] * DVX.bvecs[ii][k2,q2,l]
-        @inbounds coreY[q1,q2,l] += DVY.bvecs[ii][k1,q1,l] * L0J2Y[k1,k2,l] * DVY.bvecs[ii][k2,q2,l]
+        @inbounds coreX[q1,q2,l] = cX / scale[l] + cnX
+        @inbounds coreY[q1,q2,l] = cY / scale[l] + cnY
+        @inbounds coreXY[q1,q2,l] = cXY / scale[l]
     end
     if is_leaf(M, ii)
         XO = zeros(T, size(dataX,1), size(DVX.bvecs[ii],2), size(dataX,1), size(DVX.bvecs[ii],2))
 #         @show size(coreX,3) * size(XO,4) * size(XO,3) * size(XO,2) * size(XO,1)
         for l=1:size(coreX,3), q2 = 1:size(XO,4), p2 = 1:size(XO,3), q1 = 1:size(XO,2), p1 = 1:size(XO,1)
             @inbounds XO[p1,q1,p2,q2] += (
-                 dataX[p1,l] * coreX[q1,q2,l] * dataX[p2,l]
-                 + dataY[p1,l] * coreY[q1,q2,l] * dataY[p2,l]
-                 - dataX[p1,l] * coreXY[q1,q2,l] * dataY[p2,l]
-                 - dataX[p2,l] * coreXY[q2,q1,l] * dataY[p1,l] )
+                 dataX[p1,l] * (coreX[q1,q2,l] * dataX[p2,l]
+                 - coreXY[q1,q2,l] * dataY[p2,l])
+                 + dataY[p1,l] * (coreY[q1,q2,l] * dataY[p2,l]
+                 - coreXY[q2,q1,l] * dataX[p2,l]) )
         end
     else
         # it is a node
@@ -930,6 +950,8 @@ function DFT_JFT_JF_DF(M::TensorManifold{field}, DVX::diadicVectors{T}, DVY::dia
 #                 - Xvecs_l[p2,1,l] * Xvecs_r[r2,1,l] * coreXY[q2,q1,l] * Yvecs_l[p1,1,l] * Yvecs_r[r1,1,l])
 #         end
     end
+#     t1 = time()
+#     println("\n -> DFT_JFT_JF_DF = ", t1-t0)
     return XO
 end
 
