@@ -57,7 +57,7 @@ function FoliationIdentify(dataINorig, dataOUTorig, Tstep, embedscales, SysName,
     Misf = ISFPadeManifold(dout, din, orders.P, orders.Q, orders.U, zeros(din, dout), node_rank = node_rank)
     Xisf = zero(Misf)
     S2, U2, W2, Xstar = GaussSouthwellLinearSetup(Misf, Xisf, dataIN, dataOUT, Tstep, freq; perbox=14000, retbox=3, nbox=6, exclude = false)
-#     Misf, Xisf = GaussSouthwellOptim(Misf, Xisf, dataIN, dataOUT, scale, Tstep, freq; name = SysName, maxit=iterations.f)
+    Misf, Xisf = GaussSouthwellOptim(Misf, Xisf, dataIN, dataOUT, scale, Tstep, freq; name = SysName, maxit=iterations.f)
 
     scaleOLD = scale
     @load "ISFdata-$(SysName).bson" Misf Xisf Tstep scale
