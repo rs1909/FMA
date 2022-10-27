@@ -127,6 +127,37 @@ function TensorManifold(dims::Array{T,1}, topdim::T, ranks::Array{T,1}, children
     return TensorManifold{field}(ranks, children, dim2ind, ProductManifold(M...), ProductRetraction(R...), ProductVectorTransport(VT...))
 end
 
+# create a rank structure such that 'ratio' is the lost rank
+function cascade_ranks(children, dim2ind, topdim, dims, B=nothing; node_ratio = 1.0, leaf_ratio = min(1.0, 2/minimum(dims)), max_rank = 18)
+    if B == nothing
+        ranksub = 0
+    else
+        ranksub = size(B,2)
+    end
+    ranks = zeros(size(children[:,1]))
+    ranks[1] = topdim
+    for ii = nr_nodes(children):-1:2
+        if is_leaf(children, ii)
+            ldim = dims[findfirst(isequal(ii), dim2ind)]
+            ranks[ii] = ldim * leaf_ratio
+            n_ii = ldim - ranksub
+            if ranks[ii] > min(n_ii, max_rank)
+                ranks[ii] = min(n_ii, max_rank)
+            end
+        else
+            ii_left = children[ii,1]
+            ii_right = children[ii,2]
+            ranks[ii] = ranks[ii_left] * ranks[ii_right] * node_ratio
+            if ranks[ii] > min(ranks[ii_left] * ranks[ii_right], max_rank)
+                ranks[ii] = min(ranks[ii_left] * ranks[ii_right], max_rank)
+            end
+        end
+    end
+    ranks_int = convert(typeof(children[:,1]), round.(ranks))
+    return ranks_int
+end
+
+#  the output rank cannot be greater than the input rank
 function prune_ranks!(dims::Array{T,1}, topdim::T, ranks::Array{T,1}, children, dim2ind, B=nothing) where T <: Integer
     if B == nothing
         ranksub = 0
@@ -163,19 +194,28 @@ end
 
 """
     Create a tensor manifold with rank 6 at each node. It is not random.
-    This was supposed to be a temporary measure, but became permanent due to having worked well
+    This was supposed to be a temporary measure, but became permanent due to having worked well enough
     A better analysis on how to select ranks is needed
 """
-function RandomTensorManifold(dims::Array{T,1}, topdim::T = 1, B=nothing, tree_type = :balanced) where T <: Integer
+# function HTTensor(dims::Array{T,1}, topdim::T = 1, B=nothing, tree_type = :balanced) where T <: Integer
+#     children, dim2ind = define_tree(length(dims), tree_type)
+#     nodes = nr_nodes(children)
+#     # create ranks at each node
+#     ranks = [rand(7:7) for k=1:nodes]
+#     # the root node is singular
+#     prune_ranks!(dims, topdim, ranks, children, dim2ind, B)
+#     return TensorManifold(dims, topdim, ranks, children, dim2ind, B, tree_type)
+# end
+
+function HTTensor(dims::Array{T,1}, topdim::T = 1, B=nothing, tree_type = :balanced; node_rank = 4) where T <: Integer
     children, dim2ind = define_tree(length(dims), tree_type)
     nodes = nr_nodes(children)
     # create ranks at each node
-    ranks = [rand(6:6) for k=1:nodes]
-    # the root node is singular
-    prune_ranks!(dims, topdim, ranks, children, dim2ind, B)
+    # setting the ration to 0.6
+    ranks = cascade_ranks(children, dim2ind, topdim, dims, B, node_ratio = 1.0, leaf_ratio = min(1.0, node_rank/minimum(dims)), max_rank = 18)
     return TensorManifold(dims, topdim, ranks, children, dim2ind, B, tree_type)
 end
-
+    
 function project!(M::TensorManifold{field}, Y, p, X) where field
     return project!(M.M, Y, p, X)
 end
@@ -308,30 +348,39 @@ function diadicVectors(T, nodes)
 end
 
 function LmulBmulR!(vecs_ii, vecs_left, B, vecs_right)
-    for k=1:size(vecs_right,3)
-        for jr = 1:size(vecs_right, 2)
-            for jl = 1:size(vecs_left, 2)
-                for jb=1:size(B,2)
-                    for q=1:size(vecs_right, 1)
-                        for p=1:size(vecs_left, 1)
-                            vecs_ii[jb, jr*jl, k] += vecs_left[p,jl,k] * B[p + (q-1)*size(vecs_left, 1), jb] .* vecs_right[q,jr,k]
-                        end
-                    end
-                end
-            end
-        end
+#     println("LmulBmulR!")
+#     @time for k=1:size(vecs_right,3)
+#         for jr = 1:size(vecs_right, 2)
+#             for jl = 1:size(vecs_left, 2)
+#                 for jb=1:size(B,2)
+#                     for q=1:size(vecs_right, 1)
+#                         for p=1:size(vecs_left, 1)
+#                             @inbounds vecs_ii[jb, jr*jl, k] += vecs_left[p,jl,k] * B[p + (q-1)*size(vecs_left, 1), jb] .* vecs_right[q,jr,k]
+#                         end
+#                     end
+#                 end
+#             end
+#         end
+#     end
+    C = reshape(B, size(vecs_left, 1), size(vecs_right, 1), :)
+    if size(vecs_left,2) == 1
+        @tullio vecs_ii[jb, jr, k] = vecs_left[p,1,k] * C[p,q,jb] * vecs_right[q,jr,k]
+    elseif size(vecs_right,2) == 1
+        @tullio vecs_ii[jb, jl, k] = vecs_left[p,jl,k] * C[p,q,jb] * vecs_right[q,1,k]
     end
     return nothing
 end
 
 function BmulData!(vecs_ii, B, data_wdim)
-    for k=1:size(data_wdim,2)
-        for p=1:size(B,2)
-            for q=1:size(B,1)
-                vecs_ii[p,1,k] += B[q,p] * data_wdim[q,k]
-            end
-        end
-    end
+#     println("BmulData!")
+#     @time for k=1:size(data_wdim,2)
+#         for p=1:size(B,2)
+#             for q=1:size(B,1)
+#                 vecs_ii[p,1,k] += B[q,p] * data_wdim[q,k]
+#             end
+#         end
+#     end
+    @tullio vecs_ii[p,1,k] = B[q,p] * data_wdim[q,k]
     return nothing
 end
 
@@ -495,32 +544,42 @@ end
 
 
 function BVpmulBmulV!(bvecs_ii::AbstractArray{T,3}, B::AbstractArray{U,2}, vecs_sibling::AbstractArray{T,3}, bvecs_parent::AbstractArray{T,3}) where {T, U}
-    for k=1:size(bvecs_ii,3)
-        for r=1:size(B,2)
-            for q=1:size(vecs_sibling,1)
-                for p=1:size(bvecs_ii,2)
-                    for l=1:size(bvecs_ii,1)
-                        bvecs_ii[l,p,k] += B[p + (q-1)*size(bvecs_ii,2),r] * bvecs_parent[l,r,k] * vecs_sibling[q,1,k]
-                    end
-                end
-            end
-        end
-    end
+#     println("BVpmulBmulV!")
+#     @time for k=1:size(bvecs_ii,3)
+#         for r=1:size(B,2)
+#             for q=1:size(vecs_sibling,1)
+#                 for p=1:size(bvecs_ii,2)
+#                     for l=1:size(bvecs_ii,1)
+#                         bvecs_ii[l,p,k] += B[p + (q-1)*size(bvecs_ii,2),r] * bvecs_parent[l,r,k] * vecs_sibling[q,1,k]
+#                     end
+#                 end
+#             end
+#         end
+#     end
+#     @time begin
+    C = reshape(B, size(bvecs_ii, 2), size(vecs_sibling, 1), :)
+    @tullio bvecs_ii[l,p,k] = C[p,q,r] * bvecs_parent[l,r,k] * vecs_sibling[q,1,k]
+#     end
     return nothing
 end
 
 function VmulBmulBVp!(bvecs_ii::AbstractArray{T,3}, vecs_sibling::AbstractArray{T,3}, B::AbstractArray{U,2}, bvecs_parent::AbstractArray{T,3}) where {T, U}
-    for k=1:size(bvecs_ii,3)
-        for r=1:size(B,2)
-            for q=1:size(bvecs_ii,2)
-                for p=1:size(vecs_sibling,1)
-                    for l=1:size(bvecs_ii,1)
-                        bvecs_ii[l,q,k] += B[p + (q-1)*size(vecs_sibling,1),r] * bvecs_parent[l,r,k] * vecs_sibling[p,1,k]
-                    end
-                end
-            end
-        end
-    end
+#     println("BVpmulBmulV!")
+#     @time for k=1:size(bvecs_ii,3)
+#         for r=1:size(B,2)
+#             for q=1:size(bvecs_ii,2)
+#                 for p=1:size(vecs_sibling,1)
+#                     for l=1:size(bvecs_ii,1)
+#                         bvecs_ii[l,q,k] += B[p + (q-1)*size(vecs_sibling,1),r] * bvecs_parent[l,r,k] * vecs_sibling[p,1,k]
+#                     end
+#                 end
+#             end
+#         end
+#     end
+#     @time begin
+    C = reshape(B, size(vecs_sibling, 1), size(bvecs_ii, 2), :)
+    @tullio bvecs_ii[l,q,k] = C[p,q,r] * bvecs_parent[l,r,k] * vecs_sibling[p,1,k]
+#     end
     return nothing
 end
 
@@ -565,13 +624,6 @@ function tensorBVecsIndexed!(DV::diadicVectors{T}, M::TensorManifold{field}, X, 
             DV.bvecs[ii] = zeros(T, size(DV.bvecs[parent],1), s_l, datalen)
 #             @show ii, parent, size(B), size(vecs[sibling]), size(DV.bvecs[parent])
             BVpmulBmulV!(DV.bvecs[ii], B, DV.vecs[sibling], DV.bvecs[parent])
-#             for r=1:size(B,2)
-#                 for q=1:s_r
-#                     for p=1:s_l
-#                         @views DV.bvecs[ii][k, p,:] .+= B[p + (q-1)*s_l,r] .* DV.bvecs[parent][k, r,:] .* DV.vecs[sibling][q,1,:]
-#                     end
-#                 end
-#             end
         end
         if right != nothing
             # B[left,right,parent] <- parent = BVecs[parent], right = vecs[sibling]
@@ -589,13 +641,6 @@ function tensorBVecsIndexed!(DV::diadicVectors{T}, M::TensorManifold{field}, X, 
 #             @show size(X.B[parent]), size(DV.bvecs[parent]), size(vec(vecs[sibling]))
             DV.bvecs[ii] = zeros(T, size(DV.bvecs[parent],1), s_r, datalen)
             VmulBmulBVp!(DV.bvecs[ii], DV.vecs[sibling], B, DV.bvecs[parent])
-#             for r=1:size(B,2)
-#                 for q=1:s_r
-#                     for p=1:s_l
-#                         @views DV.bvecs[ii][k,q,:] .+= B[p + (q-1)*s_l,r] .* DV.bvecs[parent][k,r,:] .* DV.vecs[sibling][p,1,:]
-#                     end
-#                 end
-#             end
         end
     end
     DV.valid_bvecs[ii] = true
@@ -799,79 +844,117 @@ end
 function L0_DF(M::TensorManifold{field}, X, DV, data, L0, ii) where field
 #     t0 = time()
     if is_leaf(M, ii)
-        XO = zeros(size(data,1), size(DV.bvecs[ii],2))
-        for q=1:size(XO,2)
-            for p=1:size(XO,2)
-                for l=1:size(DV.bvecs[ii],1)
-                    @inbounds XO[p,q] += sum(L0[l,:] .* data[p,:] .* DV.bvecs[ii][l,q,:])
-                end
-            end
-        end
+#         println("XO")
+#         XO = zeros(size(data,1), size(DV.bvecs[ii],2))
+#         @time for q=1:size(XO,2)
+#             for p=1:size(XO,2)
+#                 for l=1:size(DV.bvecs[ii],1)
+#                     @inbounds XO[p,q] += sum(L0[l,:] .* data[p,:] .* DV.bvecs[ii][l,q,:])
+#                 end
+#             end
+#         end
+        @tullio XO[p,q] := L0[l,k] * data[p,k] * DV.bvecs[ii][l,q,k]
     else
         # it is a node
-        s_l = size(X.parts[M.children[ii,1]],2)
-        s_r = size(X.parts[M.children[ii,2]],2)
-        XO = zeros(s_l*s_r, size(DV.bvecs[ii],2))
-        for r=1:size(XO,2)
-            for q=1:s_r
-                for p=1:s_l
-                    for l=1:size(DV.bvecs[ii],1)
-                        @inbounds XO[p + (q-1)*s_l,r] += sum(L0[l,:] .* DV.vecs[M.children[ii,1]][p,1,:] .* DV.vecs[M.children[ii,2]][q,1,:] .* DV.bvecs[ii][l,r,:])
-                    end
-                end
-            end
-        end
+#         s_l = size(X.parts[M.children[ii,1]],2)
+#         s_r = size(X.parts[M.children[ii,2]],2)
+#         println("XO")
+#         XO = zeros(s_l*s_r, size(DV.bvecs[ii],2))
+#         @time for r=1:size(XO,2)
+#             for q=1:s_r
+#                 for p=1:s_l
+#                     for l=1:size(DV.bvecs[ii],1)
+#                         @inbounds XO[p + (q-1)*s_l,r] += sum(L0[l,:] .* DV.vecs[M.children[ii,1]][p,1,:] .* DV.vecs[M.children[ii,2]][q,1,:] .* DV.bvecs[ii][l,r,:])
+#                     end
+#                 end
+#             end
+#         end
+        @tullio XOp[p,q,r] := L0[l,k] * DV.vecs[M.children[ii,1]][p,1,k] * DV.vecs[M.children[ii,2]][q,1,k] * DV.bvecs[ii][l,r,k]
+        XO = reshape(XOp, :, size(XOp,3))
     end
 #     t1 = time()
 #     println("\n -> L0_DF = ", 100*(t1-t0))
     return XO
 end
 
-# Hessian with respect to parameters in P and Q
-# DF^T x DF
-# this is a 4 index quantity
-function DFoxT_DFox(M::TensorManifold{field}, DV, data, ii; scale = alwaysone()) where field
+# instead of multiplying the gradient from the left, we are multiplying it from the right
+# there is no contraction along the indices of data...
+function DF_dt(M::TensorManifold{field}, X, DV, data, dt, ii) where field
     if is_leaf(M, ii)
-        XO = zeros(size(data,1), size(DV.bvecs[ii],2), size(data,1), size(DV.bvecs[ii],2))
-        for l = 1:size(data,2)
-            for p2 = 1:size(XO,3), q2 = 1:size(XO,4), q1 = 1:size(XO,2), p1 = 1:size(XO,1)
-                for k = 1:size(DV.bvecs[ii],1)
-                    @inbounds XO[p1,q1,p2,q2] += data[p1,l] * DV.bvecs[ii][k,q1,l] * DV.bvecs[ii][k,q2,l] * data[p2,l] / scale[l]
-                end
-            end
-        end
+        @tullio XO[l,k] := DV.bvecs[ii][l,q,k] * data[p,k] * dt[p,q]
     else
-        # it is a node
-        ii_left = M.children[ii,1]
-        ii_right = M.children[ii,2]
-        s_l = size(DV.vecs[ii_left],1)
-        s_r = size(DV.vecs[ii_right],1)
-        XO = zeros(s_l*s_r, size(DV.bvecs[ii],2), s_l*s_r, size(DV.bvecs[ii],2))
-        for l = 1:size(data,2)
-            for p2 = 1:s_l, r2 = 1:s_r, q2 = 1:size(XO,4), q1 = 1:size(XO,2), r1 = 1:s_r, p1 = 1:s_l
-                for k = 1:size(DV.bvecs[ii],1)
-                    @inbounds XO[p1 + (r1-1)*s_l,q1,p2 + (r2-1)*s_l,q2] += DV.vecs[ii_left][p1,1,l] * DV.vecs[ii_right][r1,1,l] * (DV.bvecs[ii][k,q1,l] * DV.bvecs[ii][k,q2,l]) * DV.vecs[ii_left][p2,1,l] * DV.vecs[ii_right][r2,1,l] / scale[l]
-                end
-            end
-        end
+        s_l = size(X.parts[M.children[ii,1]],2)
+        s_r = size(X.parts[M.children[ii,2]],2)
+        dtp = reshape(dt, s_l, s_r, :)
+        @tullio XO[l,k] := DV.vecs[M.children[ii,1]][p,1,k] * DV.vecs[M.children[ii,2]][q,1,k] * DV.bvecs[ii][l,r,k] * dtp[p,q,r]
     end
+#     @show size(data), size(dt), size(XO)
     return XO
 end
 
+# !!! THIS IS NOT BEING USED IN OPTIMISATION !!!
+# REMOVE
+# Hessian with respect to parameters in P and Q
+# DF^T x DF
+# this is a 4 index quantity
+# function DFoxT_DFox(M::TensorManifold{field}, DV, data, ii; scale = alwaysone()) where field
+#     if is_leaf(M, ii)
+#         println("XO")
+#         XO = zeros(size(data,1), size(DV.bvecs[ii],2), size(data,1), size(DV.bvecs[ii],2))
+#         @time for l = 1:size(data,2)
+#             for p2 = 1:size(XO,3), q2 = 1:size(XO,4), q1 = 1:size(XO,2), p1 = 1:size(XO,1)
+#                 for k = 1:size(DV.bvecs[ii],1)
+#                     @inbounds XO[p1,q1,p2,q2] += data[p1,l] * DV.bvecs[ii][k,q1,l] * DV.bvecs[ii][k,q2,l] * data[p2,l] / scale[l]
+#                 end
+#             end
+#         end
+#         @time @tullio XO[p1,q1,p2,q2] := data[p1,l] * DV.bvecs[ii][k,q1,l] * DV.bvecs[ii][k,q2,l] * data[p2,l] / scale[l]
+#     else
+#         # it is a node
+#         println("XO")
+#         ii_left = M.children[ii,1]
+#         ii_right = M.children[ii,2]
+#         s_l = size(DV.vecs[ii_left],1)
+#         s_r = size(DV.vecs[ii_right],1)
+#         XO = zeros(s_l*s_r, size(DV.bvecs[ii],2), s_l*s_r, size(DV.bvecs[ii],2))
+#         @time for l = 1:size(data,2)
+#             for p2 = 1:s_l, r2 = 1:s_r, q2 = 1:size(XO,4), q1 = 1:size(XO,2), r1 = 1:s_r, p1 = 1:s_l
+#                 for k = 1:size(DV.bvecs[ii],1)
+#                     @inbounds XO[p1 + (r1-1)*s_l,q1,p2 + (r2-1)*s_l,q2] += DV.vecs[ii_left][p1,1,l] * DV.vecs[ii_right][r1,1,l] * (DV.bvecs[ii][k,q1,l] * DV.bvecs[ii][k,q2,l]) * DV.vecs[ii_left][p2,1,l] * DV.vecs[ii_right][r2,1,l] / scale[l]
+#                 end
+#             end
+#         end
+#         @time @tullio XOp[p1,r1,q1,p2,r2,q2] += DV.vecs[ii_left][p1,1,l] * DV.vecs[ii_right][r1,1,l] * (DV.bvecs[ii][k,q1,l] * DV.bvecs[ii][k,q2,l]) * DV.vecs[ii_left][p2,1,l] * DV.vecs[ii_right][r2,1,l] / scale[l]
+#         XO = reshape(XOp, s_l*s_r, s_l*s_r, :)
+#     end
+#     return XO
+# end
+
+# these are highly optimised and do not improve with tullio
 function node_XO!(XO::AbstractArray{T,4}, coreX::AbstractArray{T,3}, coreY::AbstractArray{T,3}, coreXY::AbstractArray{T,3}, 
                   Xvecs_l::AbstractArray{T,3}, Yvecs_l::AbstractArray{T,3}, Xvecs_r::AbstractArray{T,3}, Yvecs_r::AbstractArray{T,3}) where T
+#     println("XO node")
     s_l = size(Xvecs_l,1)
     s_r = size(Xvecs_r,1)
-    for l=1:size(coreX,3), p2 = 1:s_l, r2 = 1:s_r, q2 = 1:size(XO,4), q1 = 1:size(XO,2), r1 = 1:s_r, p1 = 1:s_l
-        @inbounds XO[p1 + (r1-1)*s_l,q1,p2 + (r2-1)*s_l,q2] += (
-            Xvecs_l[p1,1,l] * Xvecs_r[r1,1,l] * (coreX[q1,q2,l] * Xvecs_l[p2,1,l] * Xvecs_r[r2,1,l]
-            - coreXY[q1,q2,l] * Yvecs_l[p2,1,l] * Yvecs_r[r2,1,l])
-            + Yvecs_l[p1,1,l] * Yvecs_r[r1,1,l] * (coreY[q1,q2,l] * Yvecs_l[p2,1,l] * Yvecs_r[r2,1,l]
-            - coreXY[q2,q1,l] * Xvecs_l[p2,1,l] * Xvecs_r[r2,1,l]))
+    for l=1:size(coreX,3)
+        for p2 = 1:s_l, r2 = 1:s_r, q2 = 1:size(XO,4), q1 = 1:size(XO,2), r1 = 1:s_r, p1 = 1:s_l
+            @inbounds XO[p1 + (r1-1)*s_l,q1,p2 + (r2-1)*s_l,q2] += (
+                Xvecs_l[p1,1,l] * Xvecs_r[r1,1,l] * (coreX[q1,q2,l] * Xvecs_l[p2,1,l] * Xvecs_r[r2,1,l]
+                - coreXY[q1,q2,l] * Yvecs_l[p2,1,l] * Yvecs_r[r2,1,l])
+                + Yvecs_l[p1,1,l] * Yvecs_r[r1,1,l] * (coreY[q1,q2,l] * Yvecs_l[p2,1,l] * Yvecs_r[r2,1,l]
+                - coreXY[q2,q1,l] * Xvecs_l[p2,1,l] * Xvecs_r[r2,1,l]))
+        end
     end
+#     @time @tullio XOp[p1,r1,q1,p2,r2,q2] := @inbounds (Xvecs_l[p1,1,l] * Xvecs_r[r1,1,l] * (coreX[q1,q2,l] * Xvecs_l[p2,1,l] * Xvecs_r[r2,1,l]
+#             - coreXY[q1,q2,l] * Yvecs_l[p2,1,l] * Yvecs_r[r2,1,l])
+#             + Yvecs_l[p1,1,l] * Yvecs_r[r1,1,l] * (coreY[q1,q2,l] * Yvecs_l[p2,1,l] * Yvecs_r[r2,1,l]
+#             - coreXY[q2,q1,l] * Xvecs_l[p2,1,l] * Xvecs_r[r2,1,l]))
+#     XO2 = reshape(XOp, s_l*s_r, size(coreXY,1), s_l*s_r, size(coreXY,2))
+#     @show norm(XO .- XO2)
     nothing
 end
 
+# these are highly optimised and do not improve with tullio
 # Hessian with respect to parameters in U
 # needs JPoUox, JQoUoy, DUox, DUoy
 # then  L0J2PoUox, L0J2QoUoy
@@ -893,7 +976,7 @@ function DFT_JFT_JF_DF(M::TensorManifold{field}, DVX::diadicVectors{T}, DVY::dia
     coreX = zeros(T, size(DVX.bvecs[ii],2), size(DVX.bvecs[ii],2), size(dataX,2))
     coreY = zeros(T, size(DVY.bvecs[ii],2), size(DVY.bvecs[ii],2), size(dataY,2))
     coreXY = zeros(T, size(DVX.bvecs[ii],2), size(DVX.bvecs[ii],2), size(dataX,2))
-
+#     println("cores")
     for l=1:size(coreX,3), q1 = 1:size(DVX.bvecs[ii],2), q2 = 1:size(DVX.bvecs[ii],2)
         cX = zero(T)
         cY = zero(T)
@@ -919,7 +1002,13 @@ function DFT_JFT_JF_DF(M::TensorManifold{field}, DVX::diadicVectors{T}, DVY::dia
         @inbounds coreY[q1,q2,l] = cY / scale[l] + cnY
         @inbounds coreXY[q1,q2,l] = cXY / scale[l]
     end
+#     @time begin
+#     @tullio coreX[q1,q2,l] := DVX.bvecs[ii][k1,q1,l] * JX[s,k1,l] * JX[s,k2,l] * DVX.bvecs[ii][k2,q2,l] / scale[l] - DVX.bvecs[ii][k1,q1,l] * L0J2X[k1,k2,l] * DVX.bvecs[ii][k2,q2,l]
+#     @tullio coreY[q1,q2,l] := DVY.bvecs[ii][k1,q1,l] * JY[s,k1,l] * JY[s,k2,l] * DVY.bvecs[ii][k2,q2,l] / scale[l] + DVY.bvecs[ii][k1,q1,l] * L0J2Y[k1,k2,l] * DVY.bvecs[ii][k2,q2,l]
+#     @tullio coreXY[q1,q2,l] := DVX.bvecs[ii][k1,q1,l] * JX[s,k1,l] * JY[s,k2,l] * DVY.bvecs[ii][k2,q2,l] / scale[l]
+#     end
     if is_leaf(M, ii)
+#         println("XO leaf")
         XO = zeros(T, size(dataX,1), size(DVX.bvecs[ii],2), size(dataX,1), size(DVX.bvecs[ii],2))
 #         @show size(coreX,3) * size(XO,4) * size(XO,3) * size(XO,2) * size(XO,1)
         for l=1:size(coreX,3), q2 = 1:size(XO,4), p2 = 1:size(XO,3), q1 = 1:size(XO,2), p1 = 1:size(XO,1)
@@ -929,6 +1018,11 @@ function DFT_JFT_JF_DF(M::TensorManifold{field}, DVX::diadicVectors{T}, DVY::dia
                  + dataY[p1,l] * (coreY[q1,q2,l] * dataY[p2,l]
                  - coreXY[q2,q1,l] * dataX[p2,l]) )
         end
+#         @time @tullio XO[p1,q1,p2,q2] := (
+#                  dataX[p1,l] * (coreX[q1,q2,l] * dataX[p2,l]
+#                  - coreXY[q1,q2,l] * dataY[p2,l])
+#                  + dataY[p1,l] * (coreY[q1,q2,l] * dataY[p2,l]
+#                  - coreXY[q2,q1,l] * dataX[p2,l]) )
     else
         # it is a node
         ii_left = M.children[ii,1]
@@ -942,313 +1036,339 @@ function DFT_JFT_JF_DF(M::TensorManifold{field}, DVX::diadicVectors{T}, DVY::dia
         XO = zeros(T, s_l*s_r, size(DVX.bvecs[ii],2), s_l*s_r, size(DVX.bvecs[ii],2))
 #         @show size(coreX,3) * s_l * s_r * size(XO,4) * size(XO,2) * s_r * s_l
         node_XO!(XO, coreX, coreY, coreXY, Xvecs_l, Yvecs_l, Xvecs_r, Yvecs_r)
-#         for l=1:size(coreX,3), p2 = 1:s_l, r2 = 1:s_r, q2 = 1:size(XO,4), q1 = 1:size(XO,2), r1 = 1:s_r, p1 = 1:s_l
-#             @inbounds XO[p1 + (r1-1)*s_l,q1,p2 + (r2-1)*s_l,q2] += (
-#                 Xvecs_l[p1,1,l] * Xvecs_r[r1,1,l] * coreX[q1,q2,l] * Xvecs_l[p2,1,l] * Xvecs_r[r2,1,l]
-#                 + Yvecs_l[p1,1,l] * Yvecs_r[r1,1,l] * coreY[q1,q2,l] * Yvecs_l[p2,1,l] * Yvecs_r[r2,1,l]
-#                 - Xvecs_l[p1,1,l] * Xvecs_r[r1,1,l] * coreXY[q1,q2,l] * Yvecs_l[p2,1,l] * Yvecs_r[r2,1,l]
-#                 - Xvecs_l[p2,1,l] * Xvecs_r[r2,1,l] * coreXY[q2,q1,l] * Yvecs_l[p1,1,l] * Yvecs_r[r1,1,l])
-#         end
     end
 #     t1 = time()
 #     println("\n -> DFT_JFT_JF_DF = ", t1-t0)
     return XO
 end
 
+# !!! THIS IS NOT BEING USED IN OPTIMISATION !!!
+# REMOVE
 # this is not what is says on the tin
-function wDF(M::TensorManifold{field}, X, data, topdata; second::Integer = 0, dt::ProductRepr = ProductRepr(), rep::Integer = 0) where field
-#     if length(data) == 1
-#         println("only supports full contraction")
-#         return nothing
+# function wDF(M::TensorManifold{field}, X, data, topdata; second::Integer = 0, dt::ProductRepr = ProductRepr(), rep::Integer = 0) where field
+# #     if length(data) == 1
+# #         println("only supports full contraction")
+# #         return nothing
+# #     end
+#     XO = [zeros(Float64, 1, 0, 0) for k = 1:size(M.children, 1)]
+#     DV = tensorVecs(M, X, data; second = second, dt = dt, rep = rep)
+#     tensorBVecs!(DV, M, X, topdata; dt = dt, rep = rep)
+#     datalen = size(DV.vecs[1],3)
+#     for ii=size(M.children, 1):-1:1
+#         if is_leaf(M, ii)
+#             # it is a leaf
+#             dim = findfirst(isequal(ii), M.dim2ind)
+#             if second == dim
+#                 wdim = 2
+#             elseif second > 0
+#                 wdim = 1
+#             elseif dim > length(data)
+#                 wdim = length(data)
+#             else
+#                 wdim = dim
+#             end
+#             println("wDF 1")
+#             XO[ii] = zeros(size(DV.bvecs[ii],1), size(X.parts[ii],1), size(X.parts[ii],2))
+#             @time for q=1:size(XO[ii],3)
+#                 for p=1:size(XO[ii],2)
+#                     for l=1:size(DV.bvecs[ii],1)
+#                         @inbounds XO[ii][l,p,q] += sum(data[wdim][p,:] .* DV.bvecs[ii][l,q,:])
+#                     end
+#                 end
+#             end
+#             @time @tensoropt XOp[l,p,q] := data[wdim][p,k] * DV.bvecs[ii][l,q,k]
+#             XO[ii] = XOp
+#         else
+#             # it is a node
+#             println("wDF 2")
+#             s_l = size(X.parts[M.children[ii,1]],2)
+#             s_r = size(X.parts[M.children[ii,2]],2)
+#             XO[ii] = zeros(size(DV.bvecs[ii],1), size(X.parts[ii],1), size(X.parts[ii],2))
+#             @time for r=1:size(XO[ii],3)
+#                 for q=1:s_r
+#                     for p=1:s_l
+#                         for l=1:size(DV.bvecs[ii],1)
+#                             @inbounds XO[ii][l,p + (q-1)*s_l,r] += sum(DV.vecs[M.children[ii,1]][p,1,:] .* DV.vecs[M.children[ii,2]][q,1,:] .* DV.bvecs[ii][l,r,:])
+#                         end
+#                     end
+#                 end
+#             end
+#             @time begin
+#                 @tullio XOp[l,p,q,r] := DV.vecs[M.children[ii,1]][p,1,k] * DV.vecs[M.children[ii,2]][q,1,k] * DV.bvecs[ii][l,r,k]
+#                 XO[ii] = reshape(XOp, size(XOp,1), size(XOp,2)*size(XOp,3), :)
+#             end
+#         end
 #     end
-    XO = [zeros(Float64, 1, 0, 0) for k = 1:size(M.children, 1)]
-    DV = tensorVecs(M, X, data; second = second, dt = dt, rep = rep)
-    tensorBVecs!(DV, M, X, topdata; dt = dt, rep = rep)
-    datalen = size(DV.vecs[1],3)
-    for ii=size(M.children, 1):-1:1
-        if is_leaf(M, ii)
-            # it is a leaf
-            dim = findfirst(isequal(ii), M.dim2ind)
-            if second == dim
-                wdim = 2
-            elseif second > 0
-                wdim = 1
-            elseif dim > length(data)
-                wdim = length(data)
-            else
-                wdim = dim
-            end
-            XO[ii] = zeros(size(DV.bvecs[ii],1), size(X.parts[ii],1), size(X.parts[ii],2))
-            for q=1:size(XO[ii],3)
-                for p=1:size(XO[ii],2)
-                    for l=1:size(DV.bvecs[ii],1)
-                        @inbounds XO[ii][l,p,q] += sum(data[wdim][p,:] .* DV.bvecs[ii][l,q,:])
-                    end
-                end
-            end
-        else
-            # it is a node
-            s_l = size(X.parts[M.children[ii,1]],2)
-            s_r = size(X.parts[M.children[ii,2]],2)
-            XO[ii] = zeros(size(DV.bvecs[ii],1), size(X.parts[ii],1), size(X.parts[ii],2))
-            for r=1:size(XO[ii],3)
-                for q=1:s_r
-                    for p=1:s_l
-                        for l=1:size(DV.bvecs[ii],1)
-                            @inbounds XO[ii][l,p + (q-1)*s_l,r] += sum(DV.vecs[M.children[ii,1]][p,1,:] .* DV.vecs[M.children[ii,2]][q,1,:] .* DV.bvecs[ii][l,r,:])
-                        end
-                    end
-                end
-            end
-        end
-    end
-    return ProductRepr(map(x->dropdims(x,dims=1), XO)...)
-end
+#     return ProductRepr(map(x->dropdims(x,dims=1), XO)...)
+# end
 
+# !!! THIS IS NOT BEING USED IN OPTIMISATION !!!
+# REMOVE
 # this is like Eval:
 #  -> we need to replace X with dt in all factors and sum them up
-function DFdt(M::TensorManifold{field}, X, data, dt) where field
-    DV = tensorVecs(M, X, data; dt = dt, rep = 1)
-    tmp = deepcopy(DV)
-    for ii=2:nr_nodes(M)
-        invalidateVecs(tmp)
-        tensorVecsRecursive!(tmp, M, X, data, 1; dt = dt, rep = ii)
-        DV.vecs[1] .+= tmp.vecs[1]
-    end
-    return dropdims(DV.vecs[1], dims=2)
-end
+# function DFdt(M::TensorManifold{field}, X, data, dt) where field
+#     println("DFdt")
+#     DV = tensorVecs(M, X, data; dt = dt, rep = 1)
+#     tmp = deepcopy(DV)
+#     for ii=2:nr_nodes(M)
+#         invalidateVecs(tmp)
+#         tensorVecsRecursive!(tmp, M, X, data, 1; dt = dt, rep = ii)
+#         DV.vecs[1] .+= tmp.vecs[1]
+#     end
+#     return dropdims(DV.vecs[1], dims=2)
+# end
 
-#
-function DwDFdt(M::TensorManifold{field}, X, data, w, dt) where field
-    res = wDF(M, X, data, w; dt = dt, rep = 1)
-    res.parts[1] .= 0
-    for ii=2:size(M.children, 1)
-        tmp = wDF(M, X, data, w; dt = dt, rep = ii)
-        tmp.parts[ii] .= 0
-        res .+= tmp
-    end
-    return res
-end
+# !!! THIS IS NOT BEING USED IN OPTIMISATION !!!
+# REMOVE
+# function DwDFdt(M::TensorManifold{field}, X, data, w, dt) where field
+#     println("DwDFdt")
+#     res = wDF(M, X, data, w; dt = dt, rep = 1)
+#     res.parts[1] .= 0
+#     for ii=2:size(M.children, 1)
+#         tmp = wDF(M, X, data, w; dt = dt, rep = ii)
+#         tmp.parts[ii] .= 0
+#         res .+= tmp
+#     end
+#     return res
+# end
 
+# !!! THIS IS NOT BEING USED IN OPTIMISATION !!!
+# REMOVE
 # topdata is v
 # data[2] is w
-function vD2Fw(M::TensorManifold{field}, X, data, topdata) where field
-    res = zero(data[1])
-    for k=1:length(M.dim2ind)
-        for l=1:length(M.dim2ind)
-            if k != l
-                DV = tensorVecs(M, X, data; second = l, third = k)
-                @views res .+= dropdims(sum(DV.vecs[1] .* reshape(topdata, size(topdata,1), 1, size(topdata,2)), dims=1), dims=1)
-            end
-        end
-    end
-    return res
-end
+# function vD2Fw(M::TensorManifold{field}, X, data, topdata) where field
+#     res = zero(data[1])
+#     println("vD2Fw")
+#     @time for k=1:length(M.dim2ind)
+#         for l=1:length(M.dim2ind)
+#             if k != l
+#                 DV = tensorVecs(M, X, data; second = l, third = k)
+#                 @views res .+= dropdims(sum(DV.vecs[1] .* reshape(topdata, size(topdata,1), 1, size(topdata,2)), dims=1), dims=1)
+#             end
+#         end
+#     end
+#     return res
+# end
 
-function Gradient(M::TensorManifold{field}, X, data, topdata) where field
-    deri = wDF(M, X, data, topdata)
-    return ProductRepr(map(project!, M.M.manifolds, deri.parts, X.parts, deri.parts))
-end
+# !!! THIS IS NOT BEING USED IN OPTIMISATION !!!
+# REMOVE
+# function Gradient(M::TensorManifold{field}, X, data, topdata) where field
+#     println("Gradient")
+#     deri = wDF(M, X, data, topdata)
+#     return ProductRepr(map(project!, M.M.manifolds, deri.parts, X.parts, deri.parts))
+# end
 
+# !!! THIS IS NOT BEING USED IN OPTIMISATION !!!
+# REMOVE
 # this calculates the derivative times vector V
 # 3 inputs d[1] * [nabla T(d[2])]
-function wJF(M::TensorManifold{field}, X, data, topdata) where field
-    res = zero(data[1])
-    for k=1:length(M.dim2ind)
-        DV = tensorVecs(M, X, data; third = k)
-        @views res .+= dropdims(sum(DV.vecs[1] .* reshape(topdata, size(topdata,1), 1, size(topdata,2)), dims=1), dims=1)
-    end
-    return res
-end
+# function wJF(M::TensorManifold{field}, X, data, topdata) where field
+#     println("wJF")
+#     res = zero(data[1])
+#     for k=1:length(M.dim2ind)
+#         DV = tensorVecs(M, X, data; third = k)
+#         @views res .+= dropdims(sum(DV.vecs[1] .* reshape(topdata, size(topdata,1), 1, size(topdata,2)), dims=1), dims=1)
+#     end
+#     return res
+# end
 
-function DwJFv(M::TensorManifold{field}, X, data, topdata) where field
-    res = wDF(M, X, data, topdata; second = 1)
-    for k=2:length(M.dim2ind)
-        res .+= wDF(M, X, data, topdata; second = k)
-    end
-    return res
-end
+# !!! THIS IS NOT BEING USED IN OPTIMISATION !!!
+# REMOVE
+# function DwJFv(M::TensorManifold{field}, X, data, topdata) where field
+#     println("DwJFv")
+#     res = wDF(M, X, data, topdata; second = 1)
+#     for k=2:length(M.dim2ind)
+#         res .+= wDF(M, X, data, topdata; second = k)
+#     end
+#     return res
+# end
 
-function DwJFdt(M::TensorManifold{field}, X, data, topdata, dt) where field
-    RTV = tensorVecs(M, X, data; third = 1, dt = dt, rep = 1)
-    for k=1:length(M.dim2ind)
-        for ii=1:nr_nodes(M)
-            if (k==1) && (ii==1)
-                # skip what we already calculated
-                continue
-            end
-            tmp = tensorVecs(M, X, data; third = k, dt = dt, rep = ii)
-            RTV.vecs[1] .+= tmp.vecs[1]
-        end
-    end
-    return dropdims(sum(RTV.vecs[1] .* reshape(topdata, size(topdata,1), 1, size(topdata,2)), dims=1), dims=1)
-end
+# !!! THIS IS NOT BEING USED IN OPTIMISATION !!!
+# REMOVE
+# function DwJFdt(M::TensorManifold{field}, X, data, topdata, dt) where field
+#     println("DwJFdt")
+#     RTV = tensorVecs(M, X, data; third = 1, dt = dt, rep = 1)
+#     for k=1:length(M.dim2ind)
+#         for ii=1:nr_nodes(M)
+#             if (k==1) && (ii==1)
+#                 # skip what we already calculated
+#                 continue
+#             end
+#             tmp = tensorVecs(M, X, data; third = k, dt = dt, rep = ii)
+#             RTV.vecs[1] .+= tmp.vecs[1]
+#         end
+#     end
+#     return dropdims(sum(RTV.vecs[1] .* reshape(topdata, size(topdata,1), 1, size(topdata,2)), dims=1), dims=1)
+# end
 
+# !!! THIS IS NOT BEING USED IN OPTIMISATION !!!
+# REMOVE
 # evaluates the Jacobian at 'data' as many times as there are columns in 'data'
 # output dim 1: row, dim 2: column, dim 3: the column of 'data'
-function Jacobian(M::TensorManifold{field}, X, data) where field
-    res = zeros(size(X.parts[1],2), size(data,1), size(data,2))
-    # needs to add up all permutations
-    for k=1:length(M.dim2ind)
-        DV = tensorVecs(M, X, [data]; third = k)
-#         @show size(res), size(vecs[1])
-        @views res .+= DV.vecs[1]
-    end
-    return res
-end
+# function Jacobian(M::TensorManifold{field}, X, data) where field
+#     println("Jacobian")
+#     res = zeros(size(X.parts[1],2), size(data,1), size(data,2))
+#     # needs to add up all permutations
+#     for k=1:length(M.dim2ind)
+#         DV = tensorVecs(M, X, [data]; third = k)
+# #         @show size(res), size(vecs[1])
+#         @views res .+= DV.vecs[1]
+#     end
+#     return res
+# end
 
-function testTensor()
-    M1 = MinimalTensorManifold([4,4,4,4], 3)
-    M2 = RandomTensorManifold([4,4,4,4], 3)
-    zero(M1)
-    x1 = randn(M1)
-    zero(M2)
-    x2 = randn(M2)
-    dataIN = randn(4,10)
-    dataIN2 = randn(4,10)
-    dataOUT = randn(3,10)
-
-    getel(M1, x1, (1, 3, 2, 4, 3))
-    getel(M2, x2, (1, 3, 2, 4, 3))
-    Eval(M1, x1, [dataIN], dataOUT)
-    Eval(M2, x2, [dataIN], dataOUT)
-    wDF(M1, x1, [dataIN], dataOUT)
-    
-    Gradient(M1, x1, [dataIN], dataOUT)
-    Gradient(M2, x2, [dataIN], dataOUT)
-    wJF(M1, x1, [dataIN], dataOUT)
-    wJF(M2, x2, [dataIN], dataOUT)
-    
-    grad = wDF(M2, x2, [dataIN], dataOUT)
-    xp = deepcopy(x2)
-    gradp = deepcopy(grad)
-    eps = 1e-6
-    flag = false
-    for k=1:length(x2.parts)
-        for l=1:length(x2.parts[k])
-            xp.parts[k][l] += eps
-            gradp.parts[k][l] = sum(Eval(M2, xp, [dataIN], dataOUT) - Eval(M2, x2, [dataIN], dataOUT)) / eps
-            relErr = (gradp.parts[k][l] - grad.parts[k][l]) / grad.parts[k][l]
-            if abs(relErr) > 1e-4
-                flag = true
-                println("k = ", k, "/", length(x2.parts), " leaf=", is_leaf(M2,k), " l = ", l, "/", length(x2.parts[k]), " E = ", relErr)
-            end
-            xp.parts[k][l] = x2.parts[k][l]
-        end
-    end
-    if flag
-        println("Tensor wDF")
-        @show M2.children
-        @show diff = gradp - grad
-        return nothing
-    end
-    
-    # DFdt
-    w = randn(M2)
-    grad = DFdt(M2, x2, [dataIN], w)
-
-    xp = deepcopy(x2)
-    gradp = zero(grad)
-    eps = 1e-6
-    flag = false
-    for k=1:length(x2.parts)
-        for l=1:length(x2.parts[k])
-            xp.parts[k][l] += eps
-            tmp = (Eval(M2, xp, [dataIN]) - Eval(M2, x2, [dataIN])) / eps
-            gradp .+= tmp * w.parts[k][l]
-            xp.parts[k][l] = x2.parts[k][l]
-        end
-    end
-    if flag
-        println("Tensor DFdt")
-        @show maximum(abs.(gradp - grad))
-    end
-    
-    # now the hessian
-    w = randn(M2)
-    hess = DwDFdt(M2, x2, [dataIN], dataOUT, w)
-    
-    # test accuracy
-    xp = deepcopy(x2)
-    hessp = deepcopy(hess)
-    eps = 1e-6
-    flag = false
-    for k=1:length(x2.parts)
-        for l=1:length(x2.parts[k])
-            xp.parts[k][l] += eps
-#             tmp = map((x,y) -> broadcast(*, x, y), (wDF(M2, xp, [dataIN], dataOUT) .- wDF(M2, x2, [dataIN], dataOUT)).parts, w.parts)
-#             d2 = mapreduce(sum, +, tmp)/eps
-            hessp.parts[k][l] = inner(M2.M, x2, wDF(M2, xp, [dataIN], dataOUT) .- wDF(M2, x2, [dataIN], dataOUT), w)/eps
-#             if abs(hessp.parts[k][l] - d2) > 1e-8
-#                 println("@DIFFPROBLEM")
+# function testTensor()
+#     M1 = MinimalTensorManifold([4,4,4,4], 3)
+#     M2 = HTTensor([4,4,4,4], 3)
+#     zero(M1)
+#     x1 = randn(M1)
+#     zero(M2)
+#     x2 = randn(M2)
+#     dataIN = randn(4,10)
+#     dataIN2 = randn(4,10)
+#     dataOUT = randn(3,10)
+# 
+#     getel(M1, x1, (1, 3, 2, 4, 3))
+#     getel(M2, x2, (1, 3, 2, 4, 3))
+#     Eval(M1, x1, [dataIN], dataOUT)
+#     Eval(M2, x2, [dataIN], dataOUT)
+#     wDF(M1, x1, [dataIN], dataOUT)
+#     
+#     Gradient(M1, x1, [dataIN], dataOUT)
+#     Gradient(M2, x2, [dataIN], dataOUT)
+#     wJF(M1, x1, [dataIN], dataOUT)
+#     wJF(M2, x2, [dataIN], dataOUT)
+#     
+#     grad = wDF(M2, x2, [dataIN], dataOUT)
+#     xp = deepcopy(x2)
+#     gradp = deepcopy(grad)
+#     eps = 1e-6
+#     flag = false
+#     for k=1:length(x2.parts)
+#         for l=1:length(x2.parts[k])
+#             xp.parts[k][l] += eps
+#             gradp.parts[k][l] = sum(Eval(M2, xp, [dataIN], dataOUT) - Eval(M2, x2, [dataIN], dataOUT)) / eps
+#             relErr = (gradp.parts[k][l] - grad.parts[k][l]) / grad.parts[k][l]
+#             if abs(relErr) > 1e-4
+#                 flag = true
+#                 println("k = ", k, "/", length(x2.parts), " leaf=", is_leaf(M2,k), " l = ", l, "/", length(x2.parts[k]), " E = ", relErr)
 #             end
-            relErr = (hessp.parts[k][l] - hess.parts[k][l]) / hess.parts[k][l]
-            if abs(relErr) > 1e-4
-                flag = true
-                println("k = ", k, "/", length(x2.parts), " leaf=", is_leaf(M2,k), " l = ", l, " E = ", relErr)
-            end
-            xp.parts[k][l] = x2.parts[k][l]
-        end
-    end
-    if flag
-        println("Tensor DwDFdt")
-        @show diff = hessp - hess
-        @show diff.parts[3]
-        @show hessp.parts[3]
-        @show hess.parts[3]
-    end
+#             xp.parts[k][l] = x2.parts[k][l]
+#         end
+#     end
+#     if flag
+#         println("Tensor wDF")
+#         @show M2.children
+#         @show diff = gradp - grad
+#         return nothing
+#     end
+#     
+#     # DFdt
+#     w = randn(M2)
+#     grad = DFdt(M2, x2, [dataIN], w)
+# 
+#     xp = deepcopy(x2)
+#     gradp = zero(grad)
+#     eps = 1e-6
+#     flag = false
+#     for k=1:length(x2.parts)
+#         for l=1:length(x2.parts[k])
+#             xp.parts[k][l] += eps
+#             tmp = (Eval(M2, xp, [dataIN]) - Eval(M2, x2, [dataIN])) / eps
+#             gradp .+= tmp * w.parts[k][l]
+#             xp.parts[k][l] = x2.parts[k][l]
+#         end
+#     end
+#     if flag
+#         println("Tensor DFdt")
+#         @show maximum(abs.(gradp - grad))
+#     end
+#     
+#     # now the hessian
+#     w = randn(M2)
+#     hess = DwDFdt(M2, x2, [dataIN], dataOUT, w)
+#     
+#     # test accuracy
+#     xp = deepcopy(x2)
+#     hessp = deepcopy(hess)
+#     eps = 1e-6
+#     flag = false
+#     for k=1:length(x2.parts)
+#         for l=1:length(x2.parts[k])
+#             xp.parts[k][l] += eps
+# #             tmp = map((x,y) -> broadcast(*, x, y), (wDF(M2, xp, [dataIN], dataOUT) .- wDF(M2, x2, [dataIN], dataOUT)).parts, w.parts)
+# #             d2 = mapreduce(sum, +, tmp)/eps
+#             hessp.parts[k][l] = inner(M2.M, x2, wDF(M2, xp, [dataIN], dataOUT) .- wDF(M2, x2, [dataIN], dataOUT), w)/eps
+# #             if abs(hessp.parts[k][l] - d2) > 1e-8
+# #                 println("@DIFFPROBLEM")
+# #             end
+#             relErr = (hessp.parts[k][l] - hess.parts[k][l]) / hess.parts[k][l]
+#             if abs(relErr) > 1e-4
+#                 flag = true
+#                 println("k = ", k, "/", length(x2.parts), " leaf=", is_leaf(M2,k), " l = ", l, " E = ", relErr)
+#             end
+#             xp.parts[k][l] = x2.parts[k][l]
+#         end
+#     end
+#     if flag
+#         println("Tensor DwDFdt")
+#         @show diff = hessp - hess
+#         @show diff.parts[3]
+#         @show hessp.parts[3]
+#         @show hess.parts[3]
+#     end
 
-    # test wJF
-    # the Jacobian is a list of matrices
-    # that is Eval differentiated with respect to dimensions, but for each element in the list at the same time
-    println("Tensor wJF")
-    res_orig = wJF(M2, x2, [dataIN], dataOUT)
-    eps = 1e-6
-    res = deepcopy(res_orig)
-    dataINp = deepcopy(dataIN)
-    for k=1:size(dataIN,1)
-        dataINp[k,:] .+= eps
-#         @show size(Eval(M2, x2, [dataINp], dataOUT))
-        res[k,:] = (Eval(M2, x2, [dataINp], dataOUT) - Eval(M2, x2, [dataIN], dataOUT)) / eps
-        dataINp[k,:] = dataIN[k,:]
-    end
-    @show maximum(abs.(res_orig .- res))
-
-    println("Tensor Jacobian")
-    res_orig = Jacobian(M2, x2, dataIN)
-    eps = 1e-6
-    res = deepcopy(res_orig)
-    dataINp = deepcopy(dataIN)
-    for k=1:size(dataIN,1)
-        dataINp[k,:] .+= eps
-#         @show size(Eval(M2, x2, [dataINp], dataOUT))
-        res[:,k,:] = (Eval(M2, x2, [dataINp]) - Eval(M2, x2, [dataIN])) / eps
-        dataINp[k,:] = dataIN[k,:]
-    end
-    @show maximum(abs.(res_orig .- res))
-    
-    println("Tensor vD2Fw")
-    res_orig = vD2Fw(M2, x2, [dataIN, dataIN2], dataOUT)
-    eps = 1e-6
-    res = deepcopy(res_orig)
-    dataINp = deepcopy(dataIN)
-    for k=1:size(dataIN,1)
-        dataINp[k,:] .+= eps
-        tmp = (wJF(M2, x2, [dataINp], dataOUT) - wJF(M2, x2, [dataIN], dataOUT)) / eps
-        res[k,:] = dropdims(sum(tmp .* dataIN2,dims=1),dims=1)
-        dataINp[k,:] = dataIN[k,:]
-    end
-    @show maximum(abs.(res_orig .- res))
-
-    return nothing
-end
+#     # test wJF
+#     # the Jacobian is a list of matrices
+#     # that is Eval differentiated with respect to dimensions, but for each element in the list at the same time
+#     println("Tensor wJF")
+#     res_orig = wJF(M2, x2, [dataIN], dataOUT)
+#     eps = 1e-6
+#     res = deepcopy(res_orig)
+#     dataINp = deepcopy(dataIN)
+#     for k=1:size(dataIN,1)
+#         dataINp[k,:] .+= eps
+# #         @show size(Eval(M2, x2, [dataINp], dataOUT))
+#         res[k,:] = (Eval(M2, x2, [dataINp], dataOUT) - Eval(M2, x2, [dataIN], dataOUT)) / eps
+#         dataINp[k,:] = dataIN[k,:]
+#     end
+#     @show maximum(abs.(res_orig .- res))
+# 
+#     println("Tensor Jacobian")
+#     res_orig = Jacobian(M2, x2, dataIN)
+#     eps = 1e-6
+#     res = deepcopy(res_orig)
+#     dataINp = deepcopy(dataIN)
+#     for k=1:size(dataIN,1)
+#         dataINp[k,:] .+= eps
+# #         @show size(Eval(M2, x2, [dataINp], dataOUT))
+#         res[:,k,:] = (Eval(M2, x2, [dataINp]) - Eval(M2, x2, [dataIN])) / eps
+#         dataINp[k,:] = dataIN[k,:]
+#     end
+#     @show maximum(abs.(res_orig .- res))
+#     
+#     println("Tensor vD2Fw")
+#     res_orig = vD2Fw(M2, x2, [dataIN, dataIN2], dataOUT)
+#     eps = 1e-6
+#     res = deepcopy(res_orig)
+#     dataINp = deepcopy(dataIN)
+#     for k=1:size(dataIN,1)
+#         dataINp[k,:] .+= eps
+#         tmp = (wJF(M2, x2, [dataINp], dataOUT) - wJF(M2, x2, [dataIN], dataOUT)) / eps
+#         res[k,:] = dropdims(sum(tmp .* dataIN2,dims=1),dims=1)
+#         dataINp[k,:] = dataIN[k,:]
+#     end
+#     @show maximum(abs.(res_orig .- res))
+# 
+#     return nothing
+# end
 
 function testTensorLoss()
     dataIN = rand(4,100)
     dataOUT = 0.2*rand(4,100)
-    MP = RandomTensorManifold([2,2,2,2], 2)
-    MQ = RandomTensorManifold([2,2,2,2], 2)
-    MU = RandomTensorManifold([4,4,4,4], 2)
+    MP = HTTensor([2,2,2,2], 2)
+    MQ = HTTensor([2,2,2,2], 2)
+    MU = HTTensor([4,4,4,4], 2)
 
     XP = randn(MP)
     XQ = randn(MQ)
@@ -1420,9 +1540,9 @@ end
 function testTensorMinimize()
     dataIN = rand(4,10000)
     dataOUT = rand(4,10000)
-    MP = RandomTensorManifold([2,2,2,2], 2)
-    MQ = RandomTensorManifold([2,2,2,2], 2)
-    MU = RandomTensorManifold([4,4,4,4], 2)
+    MP = HTTensor([2,2,2,2], 2)
+    MQ = HTTensor([2,2,2,2], 2)
+    MU = HTTensor([4,4,4,4], 2)
     XP = randn(MP)
     XQ = randn(MQ)
     XU = randn(MU)

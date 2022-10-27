@@ -31,9 +31,6 @@ function ManifoldAmplitudeSquare(MWt, XWt)
         roid = findfirst(isequal(ro), M_A.mexp[1,:])
         X_A00[roid] += res
     end
-#     println("A00")
-#     display(A00.mexp)
-#     display(A00.W)
     return M_A, X_A00
 end
 
@@ -105,30 +102,11 @@ function ManifoldGeometry(MWt::DensePolyManifold, XWt)
     X_DWtr_DW = zeroJacobianSquared(M_DWtr_DW)
     DensePolyJabobianSquared!(M_DWtr_DW, X_DWtr_DW, MWt, XWt)
     
-#     # The Jacobian
-#     DW = PolyMatrixModel(Float64, dout, order, din, dout)
-#     Jacobian!(DW, Wt)
-#     DWtr = PolyMatrixModel(DW.mexp, collect(permutedims(DW.W,(2,1,3))))
-#     #how to integrate: there exists a closed form, but cannot really tell
-#     
-#     DWtr_DW = PolyMatrixModel(Float64, dout, 2*order, dout, dout)
-# #     @show size(DWtr_DW.W), size(DWtr.W), size(DW.W)
-#     PolyMatrixTimesMatrix!(DWtr_DW, DWtr, DW)
-#     DWtr_W = PolyModel(dout, dout, 2*order)
-#     PolyMatrixTimesVector!(DWtr_W, DWtr, Wt)
-
     M_A = DensePolyManifold(1, 1, 4*order)
     X_A12 = zero(M_A)
     X_A22 = zero(M_A)
     X_A10 = zero(M_A)
     X_A20 = zero(M_A)
-
-#     A12 = PolyModel(1, 1, 4*order)
-#     A22 = PolyModel(1, 1, 4*order)
-#     A10 = PolyModel(1, 1, 4*order)
-#     A20 = PolyModel(1, 1, 4*order)
-    
-#     @show A12.mexp[1,:]
     
     for k=1:size(M_DWtr_DW.mexp,2)
         p = M_DWtr_DW.mexp[1,k]
@@ -165,11 +143,6 @@ function ManifoldGeometry(MWt::DensePolyManifold, XWt)
         roid = findfirst(isequal(ro), M_A.mexp[1,:])
         X_A20[roid] += res
     end
-#     display(A12.mexp)
-#     display(A12.W)
-#     display(A22.W)
-#     display(A10.W)
-#     display(A20.W)
 
     # normalise A12, A22, divide both by r^2
     Wn = zero(X_A12)
@@ -189,8 +162,6 @@ function ManifoldGeometry(MWt::DensePolyManifold, XWt)
         end
     end
     X_A22 .= Wn
-#     display(A12.W)
-#     display(A22.W)
     return M_A, X_A12, X_A22, X_A10, X_A20
 end
 
@@ -270,10 +241,6 @@ function ODEManifoldFrequencyDamping(MWt, XWt, MS, XS, r0; output=nothing)
     # needs kappap_t, kappap_t, R_t, T_t, r
     R_hat = R_t .* kappap_t ./ (r.^2)
     T_hat = T_t - R_t .* deltap_t
-
-#     display(t)
-#     display(R_t)
-#     display(T_t)
 
     return T_hat, -R_hat./T_hat, r
 end    

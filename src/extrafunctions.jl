@@ -15,7 +15,6 @@ function dataPrune(dataINarg, dataOUTarg; nbox=10, curve=3.4, perbox=300, retbox
         dataOUT = @views dataOUTarg[:,idnz]
         iamps = sqrt.(dropdims(sum((measure * dataIN) .^ 2, dims = 1),dims=1))
     end
-#     @show iamps
     @show maximum(vec(iamps))
     imaxamp, imaxid = findmax(vec(iamps))
     lims = imaxamp*(range(0, 1, length=nbox+1) .^ curve)
@@ -79,7 +78,6 @@ function PCAEmbed(zs, Tstep, dims, freqs)
             for p=1:window, q=1:window
                 @views AA[p,q] += dot(zs[k][p:end-(window-p)], zs[k][q:end-(window-q)]) / (length(zs[k]) - (window-1))
             end
-#         @show k
         end
     end
     F = svd(AA)
@@ -92,9 +90,7 @@ function PCAEmbed(zs, Tstep, dims, freqs)
     len = 0
     for k=1:length(zs)
         len += min(length(1:skip:(length(zs[k])-skip-(window)+1)), maxtrajlength)
-#         @show min(length(1:skip:(length(zs[k])-skip-(window)+1)), maxtrajlength)
     end
-#     @show len
     dataINor = zeros(size(tab,1), len)
     dataOUTor = zeros(size(tab,1), len)
     errIN =  zeros(len)
@@ -121,79 +117,79 @@ function PCAEmbed(zs, Tstep, dims, freqs)
     return dataINor, dataOUTor, Tstep*skip, embedscales, tab, errIN, errOUT
 end
 
-    function frequencyEmbed(zs, Tstep, freqs; period = 1)
-        window = Int(floor(period/minimum(freqs)/Tstep/2)) # 1 * -> 2 * period; # 2 * the minimum period -> 2w+1 = 4 * the period
-        @show window
-        skip = Int(ceil(1/Tstep/maximum(freqs)/5))
-        @show skip
-        AA = zeros(2*window+1, 2*window+1)
-        AA[1,:].=1/sqrt(2)
-        for k=1:window
-           AA[2*k,:] .= cos.(range(0,k*2*pi,length=2*window+2)[1:end-1])
-           AA[2*k+1,:] .= sin.(range(0,k*2*pi,length=2*window+2)[1:end-1])
-        end
-        
-        # MIDDLE
-        m, delay = findmax(vec(minimum(AA .^ 2, dims=1)) .* [range(1,1.2,length=window); 1.21; range(1.2,1,length=window)])
-        # BEG
+function frequencyEmbed(zs, Tstep, freqs; period = 1)
+    window = Int(floor(period/minimum(freqs)/Tstep/2)) # 1 * -> 2 * period; # 2 * the minimum period -> 2w+1 = 4 * the period
+    @show window
+    skip = Int(ceil(1/Tstep/maximum(freqs)/5))
+    @show skip
+    AA = zeros(2*window+1, 2*window+1)
+    AA[1,:].=1/sqrt(2)
+    for k=1:window
+        AA[2*k,:] .= cos.(range(0,k*2*pi,length=2*window+2)[1:end-1])
+        AA[2*k+1,:] .= sin.(range(0,k*2*pi,length=2*window+2)[1:end-1])
+    end
+    
+    # MIDDLE
+    m, delay = findmax(vec(minimum(AA .^ 2, dims=1)) .* [range(1,1.2,length=window); 1.21; range(1.2,1,length=window)])
+    # BEG
 #         m, delay = findmax(vec(minimum(AA .^ 2, dims=1)) .* range(1,1.1,length=2*window+1))
-        # END
+    # END
 #         m, delay = findmax(vec(minimum(AA .^ 2, dims=1)) .* range(1.1,1.0,length=2*window+1))
-        @show delay
+    @show delay
 
-        ffreqs = (1:window)/(Tstep*(2*window+1))
-        midfreqs = [0; (freqs[2:end] + freqs[1:end-1])/2; Inf]
-        tab = zeros(2*length(freqs), 2*window+1)
-        embedscales = zeros(1,2*length(freqs))
-        for k=1:length(midfreqs)-1
-            ids = findall((ffreqs .> midfreqs[k]) .& (ffreqs .<= midfreqs[k+1]))
+    ffreqs = (1:window)/(Tstep*(2*window+1))
+    midfreqs = [0; (freqs[2:end] + freqs[1:end-1])/2; Inf]
+    tab = zeros(2*length(freqs), 2*window+1)
+    embedscales = zeros(1,2*length(freqs))
+    for k=1:length(midfreqs)-1
+        ids = findall((ffreqs .> midfreqs[k]) .& (ffreqs .<= midfreqs[k+1]))
 #             @show ids
 #             @show ffreqs[ids]
-            v = zero(AA[:,delay])
-            v[2*ids] .= AA[2*ids,delay]
-            # include the constant, to get rid of Gibb's phenomenon
-            if k==1
-                v[1] = AA[1,delay]
-            end
-            tab[2*k-1,:] = (transpose(v) * AA)
-            embedscales[2*k-1] = norm(tab[2*k-1,:])/((2*window + 1)/2)
-            tab[2*k-1,:] ./= norm(tab[2*k-1,:])
-            v = zero(AA[:,delay])
-            v[2*ids .+ 1] .= AA[2*ids .+ 1,delay]
-            tab[2*k,:] = (transpose(v) * AA)
-            embedscales[2*k] = norm(tab[2*k,:])/((2*window + 1)/2)
-            tab[2*k,:] ./= norm(tab[2*k,:])
+        v = zero(AA[:,delay])
+        v[2*ids] .= AA[2*ids,delay]
+        # include the constant, to get rid of Gibb's phenomenon
+        if k==1
+            v[1] = AA[1,delay]
         end
+        tab[2*k-1,:] = (transpose(v) * AA)
+        embedscales[2*k-1] = norm(tab[2*k-1,:])/((2*window + 1)/2)
+        tab[2*k-1,:] ./= norm(tab[2*k-1,:])
+        v = zero(AA[:,delay])
+        v[2*ids .+ 1] .= AA[2*ids .+ 1,delay]
+        tab[2*k,:] = (transpose(v) * AA)
+        embedscales[2*k] = norm(tab[2*k,:])/((2*window + 1)/2)
+        tab[2*k,:] ./= norm(tab[2*k,:])
+    end
 #         tab[1,:] .+= AA[1,1]*AA[1,:]
 #         tab ./= (window + 1/2)
-        
-        len = 0
-        for k=1:length(zs)
-            len += length(1:skip:(length(zs[k])-skip-(2*window+1)+1))
+    
+    len = 0
+    for k=1:length(zs)
+        len += length(1:skip:(length(zs[k])-skip-(2*window+1)+1))
 #             @show length(1:skip:(length(zs[k])-skip-(2*window+1)+1))
-        end
+    end
 #         @show len
-        dataINor = zeros(size(tab,1), len)
-        dataOUTor = zeros(size(tab,1), len)
-        errIN =  zeros(len)
-        errOUT = zeros(len)
-        p=1
-        for k=1:length(zs)
-            for q=1:skip:(length(zs[k])-skip-(2*window+1)+1)
-                dataINor[:,p] .= tab*zs[k][(q+(2*window+1)-1):-1:q]
-                dataOUTor[:,p] .= tab*zs[k][(q+skip+(2*window+1)-1):-1:(q+skip)]
-                errIN[p] = abs.(embedscales * dataINor[:,p] .- zs[k][q+(2*window+1-delay)])[1]
-                errOUT[p] = abs.(embedscales * dataOUTor[:,p] .- zs[k][q+skip+(2*window+1-delay)])[1]
-                p += 1
-            end
+    dataINor = zeros(size(tab,1), len)
+    dataOUTor = zeros(size(tab,1), len)
+    errIN =  zeros(len)
+    errOUT = zeros(len)
+    p=1
+    for k=1:length(zs)
+        for q=1:skip:(length(zs[k])-skip-(2*window+1)+1)
+            dataINor[:,p] .= tab*zs[k][(q+(2*window+1)-1):-1:q]
+            dataOUTor[:,p] .= tab*zs[k][(q+skip+(2*window+1)-1):-1:(q+skip)]
+            errIN[p] = abs.(embedscales * dataINor[:,p] .- zs[k][q+(2*window+1-delay)])[1]
+            errOUT[p] = abs.(embedscales * dataOUTor[:,p] .- zs[k][q+skip+(2*window+1-delay)])[1]
+            p += 1
         end
+    end
 #         @show abs.(embedscales*tab) .> 1e-6
 #         @show findall(abs.(embedscales*tab) .> 1e-6)
-        println("frequencyEmbed relative reproduction error = ", maximum(errIN./vec(sqrt.(sum(dataINor .^ 2,dims=1)))), ", ", maximum(errOUT./vec(sqrt.(sum(dataOUTor .^ 2,dims=1)))))
+    println("frequencyEmbed relative reproduction error = ", maximum(errIN./vec(sqrt.(sum(dataINor .^ 2,dims=1)))), ", ", maximum(errOUT./vec(sqrt.(sum(dataOUTor .^ 2,dims=1)))))
 
 #         @show sum(embedscales' * tab, dims=1)
-        return dataINor, dataOUTor, Tstep*skip, embedscales
-    end
+    return dataINor, dataOUTor, Tstep*skip, embedscales
+end
     
 # the output is
 # Wout, Rout, PW, PR

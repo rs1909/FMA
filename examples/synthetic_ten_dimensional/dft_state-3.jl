@@ -6,7 +6,7 @@ using LinearAlgebra
 function execute()
 # MODEL OBSERVED STATE
     @load "data/sys10dimTrainDFT-3.bson" xs ys Tstep embedscales
-    SysName = "10dim-DFT-3"
+    SysName = "10dim-DFT-CAS4-3"
     dataINorig = xs
     dataOUTorig = ys
 

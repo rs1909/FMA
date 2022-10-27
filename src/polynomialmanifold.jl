@@ -3,6 +3,8 @@
 ## 
 ## ---------------------------------------------------------------------------------------
 
+const UNLID = 3 # the id of the first nonlinear term in U
+
 struct PolynomialManifold{mdim, ndim, order, 𝔽} <: AbstractManifold{𝔽}
     mlist
     M        :: ProductManifold 
@@ -31,9 +33,9 @@ function vector_transport_to!(M::PolynomialManifold{mdim, ndim, order, field}, Y
     return vector_transport_to!(M.M, Y, p, X, q, method)
 end
 
-function SubmersionManifold(mdim, ndim, order, B=nothing, field::AbstractNumbers=ℝ)
-#     mlist = tuple([MultiSphereManifold(ndim, mdim); [RandomTensorManifold(repeat([ndim],k), mdim) for k=2:order]]...)
-    mlist = tuple([OrthogonalFlatManifold(ndim, mdim); [RandomTensorManifold(repeat([ndim],k), mdim, B) for k=2:order]]...)
+function SubmersionManifold(mdim, ndim, order, B=nothing, field::AbstractNumbers=ℝ; node_rank = 4)
+#     mlist = tuple([MultiSphereManifold(ndim, mdim); [HTTensor(repeat([ndim],k), mdim) for k=2:order]]...)
+    mlist = tuple([ConstantManifold(mdim, field); OrthogonalFlatManifold(ndim, mdim); [HTTensor(repeat([ndim],k), mdim, B, node_rank = node_rank) for k=2:order]]...)
     M = ProductManifold(map(x->getfield(x,:M), mlist)...)
     R = ProductRetraction(map(x->getfield(x,:R), mlist)...)
     VT = ProductVectorTransport(map(x->getfield(x,:VT), mlist)...)
@@ -41,24 +43,24 @@ function SubmersionManifold(mdim, ndim, order, B=nothing, field::AbstractNumbers
 end
 
 # here mdim is the high-dimensional output and ndim is the low dimensional input
-function ImmersionManifold(mdim, ndim, order, B=nothing, field::AbstractNumbers=ℝ)
-    mlist = tuple([OrthogonalTallManifold(ndim, mdim); [RandomTensorManifold(repeat([ndim],k), mdim, B) for k=2:order]]...)
+function ImmersionManifold(mdim, ndim, order, B=nothing, field::AbstractNumbers=ℝ; node_rank = 4)
+    mlist = tuple([OrthogonalTallManifold(ndim, mdim); [HTTensor(repeat([ndim],k), mdim, B, node_rank = node_rank) for k=2:order]]...)
     M = ProductManifold(map(x->getfield(x,:M), mlist)...)
     R = ProductRetraction(map(x->getfield(x,:R), mlist)...)
     VT = ProductVectorTransport(map(x->getfield(x,:VT), mlist)...)
     return PolynomialManifold{mdim, ndim, order, field}(mlist, M, R, VT)
 end
 
-function PolynomialFlatManifold(mdim, ndim, order, B=nothing, field::AbstractNumbers=ℝ)
-    mlist = tuple([LinearFlatManifold(ndim, mdim); [RandomTensorManifold(repeat([ndim],k), mdim, B) for k=2:order]]...)
+function PolynomialFlatManifold(mdim, ndim, order, B=nothing, field::AbstractNumbers=ℝ; node_rank = 4)
+    mlist = tuple([LinearFlatManifold(ndim, mdim); [HTTensor(repeat([ndim],k), mdim, B, node_rank = node_rank) for k=2:order]]...)
     M = ProductManifold(map(x->getfield(x,:M), mlist)...)
     R = ProductRetraction(map(x->getfield(x,:R), mlist)...)
     VT = ProductVectorTransport(map(x->getfield(x,:VT), mlist)...)
     return PolynomialManifold{mdim, ndim, order, field}(mlist, M, R, VT)
 end
 
-function PolynomialTallManifold(mdim, ndim, order, B=nothing, field::AbstractNumbers=ℝ)
-    mlist = tuple([LinearTallManifold(ndim, mdim); [RandomTensorManifold(repeat([ndim],k), mdim, B) for k=2:order]]...)
+function PolynomialTallManifold(mdim, ndim, order, B=nothing, field::AbstractNumbers=ℝ; node_rank = 4)
+    mlist = tuple([LinearTallManifold(ndim, mdim); [HTTensor(repeat([ndim],k), mdim, B, node_rank = node_rank) for k=2:order]]...)
     M = ProductManifold(map(x->getfield(x,:M), mlist)...)
     R = ProductRetraction(map(x->getfield(x,:R), mlist)...)
     VT = ProductVectorTransport(map(x->getfield(x,:VT), mlist)...)
@@ -91,7 +93,7 @@ function updateCache!(DV, M::PolynomialManifold, X, data, topdata = nothing)
 end
 
 function updateCachePartial!(DV, M::PolynomialManifold, X, data, ord, ii, topdata = nothing)
-    if ord > 1
+    if ord >= UNLID
         updateCachePartial!(DV.parts[ord], M.mlist[ord], X.parts[ord], data, ii, topdata)
     end
     return nothing

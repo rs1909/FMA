@@ -44,16 +44,16 @@ bbvf = executeVF()
 push!(PGFPlotsX.CUSTOM_PREAMBLE,raw"\usepackage{amsmath,bm,luatex85}")
 pgfplotsx()
 
-@load "FigureData-10dim-FULL-RED-1.bson" bb
+@load "FigureData-10dim-FULL-CAS4-1.bson" bb
 id1 = findfirst(bb[3] .> 0.07)
 bbr1 = bb
-@load "FigureData-10dim-FULL-RED-2.bson" bb
+@load "FigureData-10dim-FULL-CAS4-2.bson" bb
 id2 = findfirst(bb[3] .> 0.07)
 bbr2 = bb
-@load "FigureData-10dim-FULL-RED-3.bson" bb
+@load "FigureData-10dim-FULL-CAS4-3.bson" bb
 id3 = findfirst(bb[3] .> 0.07)
 bbr3 = bb
-@load "FigureData-10dim-FULL-RED-4.bson" bb
+@load "FigureData-10dim-FULL-CAS4-4.bson" bb
 id4 = findfirst(bb[3] .> 0.07)
 bbr4 = bb
 idvf = findfirst(bbvf[3] .> 0.07)
@@ -68,16 +68,16 @@ pl = plot(
 savefig(pl, "FullState.pdf")
 
 
-@load "FigureData-10dim-PCA-200-1.bson" bb
+@load "FigureData-10dim-PCA-CAS4-16-1.bson" bb # very high order U
 id1 = findfirst(bb[3] .> 0.07)
 bbr1 = bb
-@load "FigureData-10dim-PCA-200-2.bson" bb
+@load "FigureData-10dim-PCA-CAS4-16-2.bson" bb
 id2 = findfirst(bb[3] .> 0.07)
 bbr2 = bb
-@load "FigureData-10dim-PCA-200-3.bson" bb
+@load "FigureData-10dim-PCA-CAS4-16-3.bson" bb
 id3 = findfirst(bb[3] .> 0.07)
 bbr3 = bb
-@load "FigureData-10dim-PCA-200-4.bson" bb
+@load "FigureData-10dim-PCA-CAS4-16-4.bson" bb
 id4 = findfirst(bb[3] .> 0.07)
 bbr4 = bb
 idvf = findfirst(bbvf[3] .> 0.07)
@@ -92,16 +92,16 @@ pl = plot(
 savefig(pl, "PCAState.pdf")
 
     
-@load "FigureData-10dim-DFT-1.bson" bb
+@load "FigureData-10dim-DFT-CAS4-1.bson" bb
 id1 = findfirst(bb[3] .> 0.07)
 bbr1 = bb
-@load "FigureData-10dim-DFT-2.bson" bb
+@load "FigureData-10dim-DFT-CAS4-2.bson" bb
 id2 = findfirst(bb[3] .> 0.07)
 bbr2 = bb
-@load "FigureData-10dim-DFT-3.bson" bb
+@load "FigureData-10dim-DFT-CAS4-3.bson" bb
 id3 = findfirst(bb[3] .> 0.07)
 bbr3 = bb
-@load "FigureData-10dim-DFT-4.bson" bb
+@load "FigureData-10dim-DFT-CAS4-4.bson" bb
 id4 = findfirst(bb[3] .> 0.07)
 bbr4 = bb
 idvf = findfirst(bbvf[3] .> 0.07)
@@ -116,16 +116,16 @@ pl = plot(
 savefig(pl, "DFTState.pdf")
 
 
-@load "FigureData-10dim-KOOPMAN-1.bson" bb
+@load "FigureData-10dim-KOOPMAN-CAS4-1.bson" bb
 id1 = findfirst(bb[3] .> 0.07)
 bbr1 = bb
-@load "FigureData-10dim-KOOPMAN-2.bson" bb
+@load "FigureData-10dim-KOOPMAN-CAS4-2.bson" bb
 id2 = findfirst(bb[3] .> 0.07)
 bbr2 = bb
-@load "FigureData-10dim-KOOPMAN-3.bson" bb
+@load "FigureData-10dim-KOOPMAN-CAS4-3.bson" bb
 id3 = findfirst(bb[3] .> 0.07)
 bbr3 = bb
-@load "FigureData-10dim-KOOPMAN-4.bson" bb
+@load "FigureData-10dim-KOOPMAN-CAS4-4.bson" bb
 id4 = findfirst(bb[3] .> 0.07)
 bbr4 = bb
 idvf = findfirst(bbvf[3] .> 0.07)

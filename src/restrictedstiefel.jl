@@ -20,6 +20,12 @@ function vector_transport_to!(M::RestrictedStiefel{n,k,m,field}, Y::Matrix{Float
     vector_transport_to!(Stiefel(n,k), Y, p, X, q, method)
 end
 
+function vector_transport_to(M::RestrictedStiefel{n,k,m,field}, p, X, q, method::AbstractVectorTransportMethod) where {n, k, m, field}
+#     println("ISF VECTOR TRANSPORT 1")
+    return vector_transport_to(Stiefel(n,k), p, X, q, method)
+end
+
+
 function inner(M::RestrictedStiefel{n,k,m,field}, p, X, Y) where {n, k, m, field}
     return tr(transpose(X)*Y)
 end
@@ -72,6 +78,12 @@ function zero_vector!(M::RestrictedStiefel, X, p)
     return X
 end
 
+function HessProjection(M::RestrictedStiefel, X, grad, HessV, V)
+    HessR = zero(HessV)
+    project!(M, HessR, X, HessV - V*SymPart(transpose(X)*grad))
+    return HessR
+end
+
 function HessFullProjection(M::RestrictedStiefel{n,k,m,field}, X, grad, hess) where {n, k, m, field}
     # H (DR_X, DR_X) + G D^2R_X 
 #     print("RStiefel -> H.")
@@ -87,18 +99,30 @@ function HessFullProjection(M::RestrictedStiefel{n,k,m,field}, X, grad, hess) wh
 #         H[p1,q1,p2,q2] -= (grad[p2,q1]*X[p1,q2] + XGT[p1,p2]*I[q1,q2] + GTX[q1,q2]*I[p1,p2] + GTX[q2,q1]*I[p1,p2])/2
 #     end
 
-    H2 = zero(hess)
     XXT = X*transpose(X)
     # ---------------------------------------------------
     # ORIGINAL RESTRICTED
+    #             H2[p1,q1,p2,q2] += (H[i1,j1,i2,j2]*( beta[i1,p1]*I[j1,q1] - (XXT[i1,p1]*I[j1,q1] + X[i1,q1]*X[p1,j1])/2 ) * ( beta[i2,p2]*I[j2,q2] - (XXT[i2,p2]*I[j2,q2] + X[i2,q2]*X[p2,j2])/2 ) )
+    #             H2[p1,q1,p2,q2] += ( H[i1,q1,i2,j2]*beta[i1,p1] - H[i1,j1,i2,j2]*(XXT[i1,p1]*I[j1,q1] + X[i1,q1]*X[p1,j1])/2 ) * ( beta[i2,p2]*I[j2,q2] - (XXT[i2,p2]*I[j2,q2] + X[i2,q2]*X[p2,j2])/2 )
+    #             H2[p1,q1,p2,q2] += ( H[i1,q1,i2,j2]*beta[i1,p1] - (H[i1,q1,i2,j2]*XXT[i1,p1] + H[i1,j1,i2,j2]*X[i1,q1]*X[p1,j1])/2 ) * ( beta[i2,p2]*I[j2,q2] - (XXT[i2,p2]*I[j2,q2] + X[i2,q2]*X[p2,j2])/2 )
+    #             H2[p1,q1,p2,q2] += ( H[i1,q1,i2,q2]*beta[i1,p1] - (H[i1,q1,i2,q2]*XXT[i1,p1] + H[i1,j1,i2,q2]*X[i1,q1]*X[p1,j1])/2 ) * beta[i2,p2]
+    #                              - ( H[i1,q1,i2,j2]*beta[i1,p1] - (H[i1,q1,i2,j2]*XXT[i1,p1] + H[i1,j1,i2,j2]*X[i1,q1]*X[p1,j1])/2 ) * (XXT[i2,p2]*I[j2,q2] + X[i2,q2]*X[p2,j2])/2
+    #             H2[p1,q1,p2,q2] += ( H[i1,q1,i2,q2]*beta[i1,p1] - (H[i1,q1,i2,q2]*XXT[i1,p1] + H[i1,j1,i2,q2]*X[i1,q1]*X[p1,j1])/2 ) * beta[i2,p2]
+    #                              - ( H[i1,q1,i2,q2]*beta[i1,p1]/2 - (H[i1,q1,i2,q2]*XXT[i1,p1] + H[i1,j1,i2,q2]*X[i1,q1]*X[p1,j1])/4 ) * XXT[i2,p2]
+    #                              - ( H[i1,q1,i2,j2]*beta[i1,p1]/2 - (H[i1,q1,i2,j2]*XXT[i1,p1] + H[i1,j1,i2,j2]*X[i1,q1]*X[p1,j1])/4 ) * X[i2,q2]*X[p2,j2]
     beta = I - M.B*transpose(M.B)
-    for p1=1:n, q1=1:k, p2=1:n, q2=1:k
-        for i1=1:n, j1=1:k, i2=1:n, j2=1:k
-            H2[p1,q1,p2,q2] += (H[i1,j1,i2,j2]*( beta[i1,p1]*I[j1,q1] - (XXT[i1,p1]*I[j1,q1] + X[i1,q1]*X[p1,j1])/2 ) * 
-                                               ( beta[i2,p2]*I[j2,q2] - (XXT[i2,p2]*I[j2,q2] + X[i2,q2]*X[p2,j2])/2 ) )
-        end
-    end
-    return H2
+    @tensoropt H3[p1,q1,p2,q2] := (( H[i1,q1,i2,q2]*beta[i1,p1] - (H[i1,q1,i2,q2]*XXT[i1,p1] + H[i1,j1,i2,q2]*X[i1,q1]*X[p1,j1])/2 ) * beta[i2,p2]
+                                  - ( H[i1,q1,i2,q2]*beta[i1,p1]/2 - (H[i1,q1,i2,q2]*XXT[i1,p1] + H[i1,j1,i2,q2]*X[i1,q1]*X[p1,j1])/4 ) * XXT[i2,p2]
+                                  - ( H[i1,q1,i2,j2]*beta[i1,p1]/2 - (H[i1,q1,i2,j2]*XXT[i1,p1] + H[i1,j1,i2,j2]*X[i1,q1]*X[p1,j1])/4 ) * X[i2,q2]*X[p2,j2] )
+#     H2 = zero(hess)
+#     for p1=1:n, q1=1:k, p2=1:n, q2=1:k
+#         for i1=1:n, j1=1:k, i2=1:n, j2=1:k
+#             H2[p1,q1,p2,q2] += (H[i1,j1,i2,j2]*( beta[i1,p1]*I[j1,q1] - (XXT[i1,p1]*I[j1,q1] + X[i1,q1]*X[p1,j1])/2 ) * 
+#                                                ( beta[i2,p2]*I[j2,q2] - (XXT[i2,p2]*I[j2,q2] + X[i2,q2]*X[p2,j2])/2 ) )
+#         end
+#     end
+#     println("HessProjTime-R ERROR = ", maximum(abs.(H2 - H3)))
+    return H3
 end
 
 function RSloss(M, X)

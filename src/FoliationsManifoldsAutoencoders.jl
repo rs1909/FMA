@@ -87,6 +87,8 @@ export Manopt
 
 using SpecialFunctions
 using LinearAlgebra
+using TensorOperations # to contract tensors
+using Tullio # to contract tensors
 using ManifoldsBase
 using Manifolds
 using Manopt

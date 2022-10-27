@@ -198,7 +198,7 @@ function HessFullProjection(M::DensePolyManifold{ndim, n, order, identity, field
     return hess
 end
 
-function DenseMonomials(M::DensePolyManifold{ndim, n, order, identity, field}, X, data) where {ndim, n, order, identity, field}
+function DenseMonomials(M::DensePolyManifold{ndim, n, order, identity, field}, data) where {ndim, n, order, identity, field}
 #     @show size(reshape(M.mexp, ndim, :, 1))
 #     @show size(data), ndim
 #     @show size(reshape(data, ndim, 1, :))
@@ -206,20 +206,20 @@ function DenseMonomials(M::DensePolyManifold{ndim, n, order, identity, field}, X
     return dropdims(prod(zp, dims=1), dims=1)
 end
 
-function DenseMonomialsALL(M::DensePolyManifold{ndim, n, order, identity, field}, X, data) where {ndim, n, order, identity, field}
+function DenseMonomialsALL(M::DensePolyManifold{ndim, n, order, identity, field}, data) where {ndim, n, order, identity, field}
 #     @show size(reshape(M.mexp, ndim, :, 1))
 #     @show size(data), ndim
 #     @show size(reshape(data, ndim, 1, :))
-    zp = reshape(data, ndim, 1, :) .^ reshape(M.mexpALL, ndim, :, 1)
+    zp = reshape(data, size(data,1), 1, :) .^ reshape(M.mexpALL, size(M.mexpALL,1), :, 1)
     return dropdims(prod(zp, dims=1), dims=1)
 end
 
 function Eval(M::DensePolyManifold{ndim, n, order, false, field}, X, data, L0 = nothing) where {ndim, n, order, field}
     # only use admissible monomials
     if L0 == nothing
-        return X * DenseMonomials(M, X, data[1])
+        return X * DenseMonomials(M, data[1])
     else
-        return sum(L0 .* (X * DenseMonomials(M, X, data[1])))
+        return sum(L0 .* (X * DenseMonomials(M, data[1])))
     end
     nothing
 end
@@ -228,9 +228,9 @@ end
 function Eval(M::DensePolyManifold{ndim, n, order, true, field}, X, data, L0 = nothing) where {ndim, n, order, field}
     # only use admissible monomials
     if L0 == nothing
-        return X * DenseMonomials(M, X, data[1]) .+ data[1]
+        return X * DenseMonomials(M, data[1]) .+ data[1]
     else
-        return sum(L0 .* (X * DenseMonomials(M, X, data[1]) .+ data[1]))
+        return sum(L0 .* (X * DenseMonomials(M, data[1]) .+ data[1]))
     end
     nothing
 end
@@ -254,12 +254,20 @@ function fromFunction(M::DensePolyManifold{ndim, n, order, identity, field}, fun
     W = zero(M)
 	x = set_variables("x", numvars=ndim, order=order)
     y = fun(x)
-	for k=1:ndim
+	for k=1:n
 		for i = 1:size(M.mexp,2)
 	    	W[k,i] = getcoeff(y[k], M.mexp[:,i])
 	     end
 	end
     return W
+end
+
+function fromData(M::DensePolyManifold{ndim, n, order, identity, field}, dataIN, dataOUT) where {ndim, n, order, identity, field}
+    phi = DenseMonomials(M, dataIN)
+    G = phi*transpose(phi)
+    H = dataOUT*transpose(phi)
+    X = H/G
+    return X
 end
 
 #-------------------------------------------------
@@ -487,7 +495,7 @@ end
 
 function Jacobian(M::DensePolyManifold{ndim, n, order, false, field}, X, data) where {ndim, n, order, identity, field}
     DM = DensePolyDeriMatrices(M, M)
-    mon = DenseMonomialsALL(M, X, data)
+    mon = DenseMonomialsALL(M, data)
     res = zeros(size(X,1), length(DM), size(mon,2))
     for k=1:length(DM)
 #         @show size(Array(DM[k])), size(mon)
@@ -499,7 +507,7 @@ end
 # with identity added
 function Jacobian(M::DensePolyManifold{ndim, n, order, true, field}, X, data) where {ndim, n, order, identity, field}
     DM = DensePolyDeriMatrices(M, M)
-    mon = DenseMonomialsALL(M, X, data)
+    mon = DenseMonomialsALL(M, data)
     res = zeros(size(X,1), length(DM), size(mon,2))
     for k=1:length(DM)
 #         @show size(Array(DM[k])), size(mon)
@@ -516,16 +524,53 @@ end
 function Hessian(M::DensePolyManifold{ndim, n, order, identity, field}, X, data) where {ndim, n, order, identity, field}
     hess = zeros(n, ndim, ndim, size(data,2))
     DM = DensePolyDeriMatrices(M, M)
-    mon = DenseMonomialsALL(M, X, data)
+    mon = DenseMonomialsALL(M, data)
     for k=1:length(DM), l=1:length(DM)
         hess[:,k,l,:] .= X * (DM[l]*DM[k] * mon)[M.admissible,:]
     end
     return hess
 end
 
+# With respect to the parameters
 function L0_DF(M::DensePolyManifold{ndim, n, order, identity, field}, X, DV, data, L0, ii) where {ndim, n, order, identity, field}
-    mon = DenseMonomials(M, X, data)
+    mon = DenseMonomials(M, data)
     return dropdims(sum(reshape(L0,size(L0,1),1,size(L0,2)) .* reshape(mon, 1, size(mon,1), size(mon,2)), dims=3), dims=3)
+end
+
+function JF_dx(M::DensePolyManifold{ndim, n, order, false, field}, X, data, dx) where {ndim, n, order, identity, field}
+    DM = DensePolyDeriMatrices(M, M) # reshuffles the monomials and multiplies with the right constant
+    mon = DenseMonomialsALL(M, data)
+    res = zeros(size(X,1), size(mon,2))
+    for k=1:length(DM)
+        res .+= (X * (DM[k] * mon)[M.admissible,:]) .* reshape(dx[k,:],1,:)
+    end
+    return res
+end
+
+# with identity added
+function JF_dx(M::DensePolyManifold{ndim, n, order, true, field}, X, data, dx) where {ndim, n, order, identity, field}
+    DM = DensePolyDeriMatrices(M, M)
+    mon = DenseMonomialsALL(M, data)
+    res = zeros(size(X,1), size(mon,2))
+    for k=1:length(DM)
+#         @show size(X * (DM[k] * mon)[M.admissible,:]), size(data), size(mon), size(dx)
+        res .+= (X * (DM[k] * mon)[M.admissible,:]) .* reshape(dx[k,:],1,:)
+    end
+    res .+= dx
+    return res
+end
+
+function L0_HF_dx(M::DensePolyManifold{ndim, n, order, identity, field}, X, data, L0, dx) where {ndim, n, order, identity, field}
+    DM = DensePolyDeriMatrices(M, M)
+    mon = DenseMonomialsALL(M, data)
+#     @tullio hess[p,k] := L0[j,k] * X[j,l] * (DM[p]*DM[q] * mon)[M.admissible[l],k] * dx[q,k]
+    # or
+    hess = zeros(ndim, size(data,2))
+    for p=1:length(DM), q=1:length(DM)
+#         @show size((X * (DM[p]*DM[q] * mon)[M.admissible,:])), size(dx)
+        hess[p,:] .+= dropdims(sum(L0 .* (X * (DM[p]*DM[q] * mon)[M.admissible,:]) .* reshape(dx[q,:],1,:),dims=1),dims=1)
+    end
+    return hess
 end
 
 function XO_mon_mon!(XO, mon, scale)
@@ -537,7 +582,7 @@ end
 
 function DFoxT_DFox(M::DensePolyManifold{ndim, n, order, identity, field}, X, data, ii; scale = alwaysone()) where {ndim, n, order, identity, field}
     XO = zeros(n, size(M.mexp,2), n, size(M.mexp,2))
-    mon = DenseMonomials(M, X, data)
+    mon = DenseMonomials(M, data)
 #     @time for q=1:min(ndim,n), l=1:size(data,2), p1=1:size(M.mexp,2), p2=1:size(M.mexp,2)
     XO_mon_mon!(XO, mon, scale)
     return XO

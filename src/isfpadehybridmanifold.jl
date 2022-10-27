@@ -12,18 +12,18 @@
 #----------------------------------------------------------------------------------------------------------------------------------------
 
 "Scaling function to use in optimisation problems" 
-function AmplitudeScaling(dataIN)
-    return ampsq = sum(dataIN .^ 2, dims = 1)*2^(-7)
+function AmplitudeScaling(dataIN, Xstar)
+#     @show size(Xstar)
+    return (0.1^2 .+ sum((dataIN .- reshape(Xstar,:,1)) .^ 2, dims = 1))*2^(-7)
+#     return ones(1,size(dataIN,2))*2^(-7)
 end
-
-"defines the penalty term in optimisation"
-const LAMBDA = 0
 
 struct ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, 𝔽} <: AbstractManifold{𝔽}
     mlist
     M        :: ProductManifold 
     R        :: ProductRetraction 
     VT       :: ProductVectorTransport
+    Xstar    :: AbstractArray
 end
 
 function inner(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, field}, p, X, Y) where {mdim, ndim, Porder, Qorder, Uorder, field}
@@ -132,7 +132,10 @@ function NextElement(X::ProductRepr, id)
         return (3, 1, 0)
     elseif id[1] == 3
         if id[2] == 1
-            # the linear part
+            # the constant part
+            return (id[1], id[2]+1, 0)
+        elseif id[2] == 2
+            # the constant part
             return (id[1], id[2]+1, 1)
         elseif id[3] < length(X.parts[id[1]].parts[id[2]].parts)
             # nonlinear part
@@ -164,9 +167,14 @@ function NextMaximumNorm(X::ProductRepr, id)
         return (3, 1, 0)
     elseif id[1] == 3
         # return with nonlinear parts of U,
-        if id[2] < length(X.parts[id[1]].parts)
-            val, ix = findmax(map(a -> sqrt(sum(a .^ 2)), X.parts[id[1]].parts[id[2]+1].parts))
-            # the linear part
+        if id[2] < UNLID
+            return (id[1], id[2]+1, 1)
+        elseif id[2] < length(X.parts[id[1]].parts)
+            norms = map(a -> sqrt(sum(a .^ 2)), X.parts[id[1]].parts[id[2]+1].parts)
+            println("norms = ", norms)
+            # random proportional to the size
+            cs = cumsum(norms)
+            ix = findfirst(cs./cs[end] .> rand(eltype(cs)))
             return (id[1], id[2]+1, ix)
         else
             # if it is the last nonlinear part, the return P
@@ -197,12 +205,12 @@ The parameters are
   * `B`: the matrix ``\boldsymbol{W}_1``, such that ``\boldsymbol{U} (\boldsymbol{W}_1 \boldsymbol{z})`` is constraing to be linear.
   * `fields`: dummy, a standard parameter of `Manifolds.jl`
 """
-function ISFPadeManifold(mdim, ndim, Porder, Qorder, Uorder, B=nothing, field::AbstractNumbers=ℝ)
-    mlist = (DenseNonconstManifold(mdim, mdim, Porder), DenseNearIdentityManifold(mdim, mdim, Qorder), SubmersionManifold(mdim, ndim, Uorder, B))
+function ISFPadeManifold(mdim, ndim, Porder, Qorder, Uorder, B=nothing, field::AbstractNumbers=ℝ; node_rank = 4, X = zeros(ndim))
+    mlist = (DenseNonconstManifold(mdim, mdim, Porder), DenseNearIdentityManifold(mdim, mdim, Qorder), SubmersionManifold(mdim, ndim, Uorder, B, node_rank = node_rank))
     M = ProductManifold(mlist...)
     R = ProductRetraction(map(x->getfield(x,:R), mlist)...)
     VT = ProductVectorTransport(map(x->getfield(x,:VT), mlist)...)
-    return ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, field}(mlist, M, R, VT)
+    return ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, field}(mlist, M, R, VT, X)
 end
 
 function ISFPadeSetRestriction(M::ISFPadeManifold, B)
@@ -227,7 +235,7 @@ function makeCache(M::ISFPadeManifold, X, dataIN, dataOUT)
     return XYcache(makeCache(PadeU(M), PadeUpoint(X), [dataIN]), makeCache(PadeU(M), PadeUpoint(X), [dataOUT]))
 end
 
-function updateCache!(DV::XYcache, M::ISFPadeManifold, X, dataIN, dataOUT, ord, ii)
+function updateCache!(DV::XYcache, M::ISFPadeManifold, X, dataIN, dataOUT)
 #     tensorVecsInvalidate(DV.X.parts[ord], PadeU(M).mlist[ord], ii)
 #     tensorVecsInvalidate(DV.Y.parts[ord], PadeU(M).mlist[ord], ii)
 #     tensorBVecsInvalidate(DV.X.parts[ord], PadeU(M).mlist[ord], ii)
@@ -251,16 +259,21 @@ function updateCachePartial!(DV::XYcache, M::ISFPadeManifold, X, dataIN, dataOUT
     return nothing
 end
 
-function ISFPadeLoss(M::ISFPadeManifold, X, dataIN, dataOUT; DV=makeCache(M, X, dataIN, dataOUT))
-    datalen = size(dataIN,2)
-    reg = 0.0
-    for k=2:length(PadeUpoint(X).parts)
-#         reg += LAMBDA * sum(abs.(PadeUpoint(X).parts[k].parts[1]))
-        # L2
-        reg += LAMBDA * sum(abs.(PadeUpoint(X).parts[k].parts[1]) .^2)
+function ISFPadeLoss(M::ISFPadeManifold, X, dataIN, dataOUT; DV=makeCache(M, X, dataIN, dataOUT), Xnew=nothing, ord = 1, ii = 1)
+    # copy over the new value if not the same object
+    if Xnew != nothing
+        if ord < 3
+            PadeUpoint(X).parts[ord] .= Xnew
+        elseif PadeUpoint(X).parts[ord].parts[ii] !== Xnew
+            PadeUpoint(X).parts[ord].parts[ii] .= Xnew
+        end
+        updateCachePartial!(DV, M, X, dataIN, dataOUT, ord, ii)
+        print("_")
     end
 
-    scale = AmplitudeScaling(dataIN)
+    datalen = size(dataIN,2)
+
+    scale = AmplitudeScaling(dataIN, M.Xstar)
 
     Uoy = Eval(PadeU(M), PadeUpoint(X), [dataOUT]; DV=DV.Y)
     Uox = Eval(PadeU(M), PadeUpoint(X), [dataIN]; DV=DV.X)
@@ -268,19 +281,13 @@ function ISFPadeLoss(M::ISFPadeManifold, X, dataIN, dataOUT; DV=makeCache(M, X, 
     PoUox = Eval(PadeP(M), PadePpoint(X), [Uox])
     L0 = QoUoy .- PoUox
     print(".")
-    return sum( (L0 .^ 2) ./ scale )/2/datalen + reg/2
+    return sum( (L0 .^ 2) ./ scale )/2/datalen
 end
 
 function ISFPadeLossInfinity(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, field}, X, dataIN, dataOUT) where {mdim, ndim, Porder, Qorder, Uorder, field}
     datalen = size(dataIN,2)
-#     reg = 0.0
-#     for k=2:length(PadeUpoint(X).parts)
-# #         reg += LAMBDA * sum(abs.(PadeUpoint(X).parts[k].parts[1]))
-#         # L2
-#         reg += LAMBDA * sum(abs.(PadeUpoint(X).parts[k].parts[1]) .^2)
-#     end
 
-    scale = AmplitudeScaling(dataIN)
+    scale = AmplitudeScaling(dataIN, M.Xstar)
 
     Uoy = Eval(PadeU(M), PadeUpoint(X), [dataOUT])
     Uox = Eval(PadeU(M), PadeUpoint(X), [dataIN])
@@ -293,7 +300,7 @@ end
 
 function ISFPadeGradientP(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, field}, X, dataIN, dataOUT; DV=makeCache(M, X, dataIN, dataOUT)) where {mdim, ndim, Porder, Qorder, Uorder, field}
     datalen = size(dataIN,2)
-    scale = AmplitudeScaling(dataIN)
+    scale = AmplitudeScaling(dataIN, M.Xstar)
 
     Uoy = Eval(PadeU(M), PadeUpoint(X), [dataOUT]; DV=DV.Y)
     Uox = Eval(PadeU(M), PadeUpoint(X), [dataIN]; DV=DV.X)
@@ -306,7 +313,7 @@ end
 
 function ISFPadeGradientQ(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, field}, X, dataIN, dataOUT; DV=makeCache(M, X, dataIN, dataOUT)) where {mdim, ndim, Porder, Qorder, Uorder, field}
     datalen = size(dataIN,2)
-    scale = AmplitudeScaling(dataIN)
+    scale = AmplitudeScaling(dataIN, M.Xstar)
 
     Uoy = Eval(PadeU(M), PadeUpoint(X), [dataOUT]; DV=DV.Y)
     Uox = Eval(PadeU(M), PadeUpoint(X), [dataIN]; DV=DV.X)
@@ -317,7 +324,7 @@ function ISFPadeGradientQ(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder,
     return L0_DF(PadeQ(M), PadeQpoint(X), nothing, Uoy, L0, nothing)/datalen
 end
 
-function gradUmonomial(M::LinearManifold, X, L0_JPoUox, L0_JQoUoy, dataIN, dataOUT, _p1, _p2)
+function gradUmonomial(M::Union{ConstantManifold, LinearManifold}, X, L0_JPoUox, L0_JQoUoy, dataIN, dataOUT, _p1, _p2)
     datalen = size(dataIN,2)
     return (L0_DF(M, X, nothing, dataOUT, L0_JQoUoy, nothing) .- L0_DF(M, X, nothing, dataIN, L0_JPoUox, nothing))/datalen
 end
@@ -325,9 +332,20 @@ end
 # Calculate the gradient with respect to a node in U
 # ord -> monomial order
 # ii  -> index of the node 
-function ISFPadeGradientU(M::ISFPadeManifold, X, dataIN, dataOUT, ord, ii; DV=makeCache(M, X, dataIN, dataOUT))
+function ISFPadeGradientU(M::ISFPadeManifold, X, dataIN, dataOUT, ord, ii; DV=makeCache(M, X, dataIN, dataOUT), Xnew=nothing)
+    # copy over the new value if not the same object
+    if Xnew != nothing
+        if ord < UNLID
+            PadeUpoint(X).parts[ord] .= Xnew
+        elseif PadeUpoint(X).parts[ord].parts[ii] !== Xnew
+            PadeUpoint(X).parts[ord].parts[ii] .= Xnew
+        end
+        updateCachePartial!(DV, M, X, dataIN, dataOUT, ord, ii)
+        print(",")
+    end
+
     datalen = size(dataIN,2)
-    scale = AmplitudeScaling(dataIN)
+    scale = AmplitudeScaling(dataIN, M.Xstar)
 
     Uoy = Eval(PadeU(M), PadeUpoint(X), [dataOUT]; DV=DV.Y)
     Uox = Eval(PadeU(M), PadeUpoint(X), [dataIN]; DV=DV.X)
@@ -340,8 +358,11 @@ function ISFPadeGradientU(M::ISFPadeManifold, X, dataIN, dataOUT, ord, ii; DV=ma
     JPoUox = Jacobian(PadeP(M), PadePpoint(X), Uox)
     L0_JQoUoy = dropdims(sum(JQoUoy .* reshape(L0, size(L0,1), 1, size(L0,2)), dims=1), dims=1)
     L0_JPoUox = dropdims(sum(JPoUox .* reshape(L0, size(L0,1), 1, size(L0,2)), dims=1), dims=1)
-    if ord == 1
-        return (L0_DF(PadeU(M).mlist[1], PadeUpoint(X).parts[1], nothing, dataOUT, L0_JQoUoy, ii) .- L0_DF(PadeU(M).mlist[1], PadeUpoint(X).parts[1], nothing, dataIN, L0_JPoUox, ii))/datalen
+    if ord < UNLID
+        grad = (L0_DF(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], nothing, dataOUT, L0_JQoUoy, ii) 
+                .- L0_DF(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], nothing, dataIN, L0_JPoUox, ii))/datalen
+#         @show size(grad)
+        return grad
     else
 #         DVUoy = tensorVecs(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], [dataOUT])
 #         tensorBVecs!(DV.Y, PadeU(M).mlist[ord], PadeUpoint(X).parts[ord])
@@ -349,13 +370,9 @@ function ISFPadeGradientU(M::ISFPadeManifold, X, dataIN, dataOUT, ord, ii; DV=ma
 #         tensorBVecs!(DV.X, PadeU(M).mlist[ord], PadeUpoint(X).parts[ord])
         grad = (L0_DF(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], DV.Y.parts[ord], dataOUT, L0_JQoUoy, ii) 
             .- L0_DF(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], DV.X.parts[ord], dataIN, L0_JPoUox, ii) )/datalen
-        if ii == 1
-#             grad .+= LAMBDA * sign.(PadeUpoint(X).parts[ord].parts[ii]) # L1 regularisation
-            grad .+= LAMBDA * PadeUpoint(X).parts[ord].parts[ii] # L2 regularisation
-        end
         return grad
     end
-#     return gradUmonomial(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], L0_JPoUox, L0_JQoUoy, dataIN, dataOUT)
+    nothing
 end
 
 function gradUmonomial(M::TensorManifold, X, L0_JPoUox, L0_JQoUoy, dataIN, dataOUT, DVUox, DVUoy)
@@ -368,19 +385,14 @@ function gradUmonomial(M::TensorManifold, X, L0_JPoUox, L0_JQoUoy, dataIN, dataO
     # this is missing the penalty term
     function tmp(ii)
         G = (L0_DF(M, X, DVUoy, dataOUT, L0_JQoUoy, ii) .- L0_DF(M, X, DVUox, dataIN, L0_JPoUox, ii))/datalen 
-        if ii == 1 
-#             return G .+ LAMBDA * sign.(X.parts[ii]) # L1 penalty
-            return G .+ LAMBDA * X.parts[ii] # L2 penalty
-        else 
-            return G
-        end
+        return G
     end
     return ProductRepr(map(tmp, collect(1:length(X.parts)))...)
 end
 
 function ISFPadeGradientAll(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, field}, X, dataIN, dataOUT; DV=makeCache(M, X, dataIN, dataOUT)) where {mdim, ndim, Porder, Qorder, Uorder, field}
     datalen = size(dataIN,2)
-    scale = AmplitudeScaling(dataIN)
+    scale = AmplitudeScaling(dataIN, M.Xstar)
     
     Uoy = Eval(PadeU(M), PadeUpoint(X), [dataOUT]; DV=DV.Y)
     Uox = Eval(PadeU(M), PadeUpoint(X), [dataIN]; DV=DV.X)
@@ -404,12 +416,14 @@ end
 
 function ISFPadeRiemannianGradient(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, field}, X, dataIN, dataOUT; DV=makeCache(M, X, dataIN, dataOUT)) where {mdim, ndim, Porder, Qorder, Uorder, field}
     gr = ISFPadeGradientAll(M, X, dataIN, dataOUT; DV=DV)
+#     @show size(gr.parts[3].parts[1])
+#     @show size(gr.parts[3].parts[2])
     return project(M, X, gr)
 end
 
 function ISFPadeGradientHessianP(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, field}, X, dataIN, dataOUT; DV=makeCache(M, X, dataIN, dataOUT)) where {mdim, ndim, Porder, Qorder, Uorder, field}
     datalen = size(dataIN,2)
-    scale = AmplitudeScaling(dataIN)
+    scale = AmplitudeScaling(dataIN, M.Xstar)
 
     Uoy = Eval(PadeU(M), PadeUpoint(X), [dataOUT]; DV=DV.Y)
     Uox = Eval(PadeU(M), PadeUpoint(X), [dataIN]; DV=DV.X)
@@ -426,7 +440,7 @@ end
 
 function ISFPadeGradientHessianQ(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, field}, X, dataIN, dataOUT; DV=makeCache(M, X, dataIN, dataOUT)) where {mdim, ndim, Porder, Qorder, Uorder, field}
     datalen = size(dataIN,2)
-    scale = AmplitudeScaling(dataIN)
+    scale = AmplitudeScaling(dataIN, M.Xstar)
 
     Uoy = Eval(PadeU(M), PadeUpoint(X), [dataOUT]; DV=DV.Y)
     Uox = Eval(PadeU(M), PadeUpoint(X), [dataIN]; DV=DV.X)
@@ -439,6 +453,65 @@ function ISFPadeGradientHessianQ(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, 
     return grad, hess
 end
 
+function ISFPadeHessianVectorU(M::ISFPadeManifold, X, Xp, dataIN, dataOUT, ord, ii; DV=makeCache(M, X, dataIN, dataOUT), Xnew=nothing)
+    # copy over the new value if not the same object
+    if Xnew != nothing
+        if ord < UNLID
+            PadeUpoint(X).parts[ord] .= Xnew
+        elseif PadeUpoint(X).parts[ord].parts[ii] !== Xnew
+            PadeUpoint(X).parts[ord].parts[ii] .= Xnew
+        end
+        updateCachePartial!(DV, M, X, dataIN, dataOUT, ord, ii)
+        print("~")
+    end
+    
+    datalen = size(dataIN,2)
+    scale = AmplitudeScaling(dataIN, M.Xstar)
+
+    Uoy = Eval(PadeU(M), PadeUpoint(X), [dataOUT]; DV=DV.Y)
+    Uox = Eval(PadeU(M), PadeUpoint(X), [dataIN]; DV=DV.X)
+    QoUoy = Eval(PadeQ(M), PadeQpoint(X), [Uoy])
+    PoUox = Eval(PadeP(M), PadePpoint(X), [Uox])
+    L0 = (QoUoy .- PoUox) ./ scale
+    
+    #DF_dt(M::TensorManifold{field}, X, DV, data, dt, ii)
+    Dt_Uox_z0 = DF_dt(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], DV.X.parts[ord], dataIN, Xp, ii)
+    Dt_Uoy_z0 = DF_dt(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], DV.Y.parts[ord], dataOUT, Xp, ii)
+    Dx_QoUoy = JF_dx(PadeQ(M), PadeQpoint(X), Uoy, Dt_Uoy_z0)
+    Dx_PoUox = JF_dx(PadeP(M), PadePpoint(X), Uox, Dt_Uox_z0)
+    
+    L0_grad = (Dx_QoUoy - Dx_PoUox) ./ scale
+    
+    JQoUoy = Jacobian(PadeQ(M), PadeQpoint(X), Uoy)
+    JPoUox = Jacobian(PadeP(M), PadePpoint(X), Uox)
+    L0_JQoUoy = dropdims(sum(JQoUoy .* reshape(L0, size(L0,1), 1, size(L0,2)), dims=1), dims=1)
+    L0_JPoUox = dropdims(sum(JPoUox .* reshape(L0, size(L0,1), 1, size(L0,2)), dims=1), dims=1)
+    L0_grad_JQoUoy = dropdims(sum(JQoUoy .* reshape(L0_grad, size(L0_grad,1), 1, size(L0_grad,2)), dims=1), dims=1)
+    L0_grad_JPoUox = dropdims(sum(JPoUox .* reshape(L0_grad, size(L0_grad,1), 1, size(L0_grad,2)), dims=1), dims=1)
+    
+    pQ = L0_HF_dx(PadeQ(M), PadeQpoint(X), Uoy, L0, Dt_Uoy_z0)
+    pP = L0_HF_dx(PadeP(M), PadePpoint(X), Uox, L0, Dt_Uox_z0)
+
+    if ord < UNLID
+        hess_A = ( L0_DF(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], nothing, dataOUT, L0_grad_JQoUoy, ii) 
+                .- L0_DF(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], nothing, dataIN, L0_grad_JPoUox, ii) )/datalen
+        hess_B = ( L0_DF(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], nothing, dataOUT, pQ, ii) 
+                .- L0_DF(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], nothing, dataIN, pP, ii) )/datalen
+        grad = (   L0_DF(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], nothing, dataOUT, L0_JQoUoy, ii) 
+                .- L0_DF(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], nothing, dataIN, L0_JPoUox, ii) )/datalen
+        return HessProjection(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], grad, hess_A + hess_B, Xp)
+    else
+        hess_A = ( L0_DF(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], DV.Y.parts[ord], dataOUT, L0_grad_JQoUoy, ii) 
+                .- L0_DF(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], DV.X.parts[ord], dataIN, L0_grad_JPoUox, ii) )/datalen
+        hess_B = ( L0_DF(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], DV.Y.parts[ord], dataOUT, pQ, ii) 
+                .- L0_DF(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], DV.X.parts[ord], dataIN, pP, ii) )/datalen
+        grad = (   L0_DF(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], DV.Y.parts[ord], dataOUT, L0_JQoUoy, ii) 
+                .- L0_DF(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], DV.X.parts[ord], dataIN, L0_JPoUox, ii) )/datalen
+        return HessProjection(PadeU(M).M.manifolds[ord].manifolds[ii], PadeUpoint(X).parts[ord].parts[ii], grad, hess_A + hess_B, Xp)
+    end
+    nothing
+end
+
 function ISFPadeGradientHessianU(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, field}, X, dataIN, dataOUT, ord, ii; DV=makeCache(M, X, dataIN, dataOUT)) where {mdim, ndim, Porder, Qorder, Uorder, field}
 #       DUox^T x JPoUox^T x JPoUox x DUox   -> 1
 #     + DUoy^T x JQoUoy^T x JQoUoy x DUoy   -> 2
@@ -446,10 +519,8 @@ function ISFPadeGradientHessianU(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, 
 #     - DUoy^T x JQoUoy^T x JPoUox x DUox   -> 3^T
 #     - DUox^T x L0J2PoUox x DUox
 #     + DUoy^T x L0J2QoUoy x DUoy
-    t = []
-    push!(t, time())
     datalen = size(dataIN,2)
-    scale = AmplitudeScaling(dataIN)
+    scale = AmplitudeScaling(dataIN, M.Xstar)
 
     Uoy = Eval(PadeU(M), PadeUpoint(X), [dataOUT]; DV=DV.Y)
     Uox = Eval(PadeU(M), PadeUpoint(X), [dataIN]; DV=DV.X)
@@ -457,48 +528,34 @@ function ISFPadeGradientHessianU(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, 
     PoUox = Eval(PadeP(M), PadePpoint(X), [Uox])
     L0 = (QoUoy .- PoUox) ./ scale
 
-    push!(t, time())
     JQoUoy = Jacobian(PadeQ(M), PadeQpoint(X), Uoy)
     JPoUox = Jacobian(PadeP(M), PadePpoint(X), Uox)
     L0_JQoUoy = dropdims(sum(JQoUoy .* reshape(L0, size(L0,1), 1, size(L0,2)), dims=1), dims=1)
     L0_JPoUox = dropdims(sum(JPoUox .* reshape(L0, size(L0,1), 1, size(L0,2)), dims=1), dims=1)
     
-    push!(t, time())
     # the hessians or P and Q
-#     println("tensorHessian")
     J2QoUoy = Hessian(PadeQ(M), PadeQpoint(X), Uoy)
     J2PoUox = Hessian(PadeP(M), PadePpoint(X), Uox)
     L0J2QoUoy = dropdims(sum(J2QoUoy .* reshape(L0, size(L0,1), 1, 1, size(L0,2)), dims=1), dims=1)
     L0J2PoUox = dropdims(sum(J2PoUox .* reshape(L0, size(L0,1), 1, 1, size(L0,2)), dims=1), dims=1)
     
-    if ord == 1
-        push!(t, time())
-        grad = (L0_DF(PadeU(M).mlist[1], PadeUpoint(X).parts[1], nothing, dataOUT, L0_JQoUoy, ii) .- L0_DF(PadeU(M).mlist[1], PadeUpoint(X).parts[1], nothing, dataIN, L0_JPoUox, ii))/datalen
+    if ord < UNLID
+        grad = (L0_DF(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], nothing, dataOUT, L0_JQoUoy, ii) 
+                .- L0_DF(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], nothing, dataIN, L0_JPoUox, ii))/datalen
         hess = DFT_JFT_JF_DF(PadeU(M).mlist[ord], nothing, nothing, JPoUox, JQoUoy, L0J2PoUox, L0J2QoUoy, dataIN, dataOUT, ii; scale=scale)/datalen
     else
-#         push!(t, time())
 #         DVUoy = tensorVecs(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], [dataOUT])
 #         DVUox = tensorVecs(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], [dataIN])
 #         push!(t, time())
 #         tensorBVecs!(DVUoy, PadeU(M).mlist[ord], PadeUpoint(X).parts[ord])
 #         tensorBVecs!(DVUox, PadeU(M).mlist[ord], PadeUpoint(X).parts[ord])
-#         push!(t, time())
         DVUox = DV.X.parts[ord]
         DVUoy = DV.Y.parts[ord]
         # grad_U = L0^T (JQoUoy x DUoy - JPoUox x DUox)
         grad = (L0_DF(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], DVUoy, dataOUT, L0_JQoUoy, ii) 
             .- L0_DF(PadeU(M).mlist[ord], PadeUpoint(X).parts[ord], DVUox, dataIN, L0_JPoUox, ii))/datalen
-        push!(t, time())
         hess = DFT_JFT_JF_DF(PadeU(M).mlist[ord], DVUox, DVUoy, JPoUox, JQoUoy, L0J2PoUox, L0J2QoUoy, dataIN, dataOUT, ii; scale=scale)/datalen
-        if ii == 1
-#             grad .+= LAMBDA * sign.(PadeUpoint(X).parts[ord].parts[ii]) # L1 regularisation
-            grad .+= LAMBDA * PadeUpoint(X).parts[ord].parts[ii] # L2 regularisation
-            hess .+= reshape(Diagonal(LAMBDA*ones(size(hess,1)*size(hess,2))),size(hess)) # L2 regularisation
-        end
     end
-    push!(t, time())
-#     println("GHU times ", size(grad))
-#     display(t[2:end] .- t[1:end-1])
     return grad, hess
 end
 
@@ -565,7 +622,8 @@ function testPadeLoss()
     flag = false
     xp = deepcopy(x1)
     eps = 1e-6
-    let ord = 1, ii = nothing
+    for ord = 1:2
+        ii = nothing
         MP = PadeU(M1).mlist[ord]
         XP = PadeUpoint(x1).parts[ord]
         XPp = PadeUpoint(xp).parts[ord]
@@ -582,7 +640,7 @@ function testPadeLoss()
             XPp[k1,k2] = XP[k1,k2]
         end
     end
-    for ord=2:length(PadeUpoint(x1).parts)
+    for ord=3:length(PadeUpoint(x1).parts)
         MP = PadeU(M1).mlist[ord]
         XP = PadeUpoint(x1).parts[ord]
         XPp = PadeUpoint(xp).parts[ord]
@@ -665,8 +723,9 @@ function testPadeLoss()
     # checking U HESSIAN
     flag = false
     xp = deepcopy(x1)
-    eps = 1e-8
-    let ord = 1, ii = nothing
+    eps = 1e-7
+    for ord = 1:2
+        ii = nothing
         MP = PadeU(M1).mlist[ord]
         XP = PadeUpoint(x1).parts[ord]
         XPp = PadeUpoint(xp).parts[ord]
@@ -677,7 +736,7 @@ function testPadeLoss()
             XPp[k1,k2] += eps
             hessPp[:,:,k1,k2] .= (ISFPadeGradientU(M1, xp, dataIN, dataOUT, ord, ii) .- ISFPadeGradientU(M1, x1, dataIN, dataOUT, ord, ii))/eps
             relErr = maximum(abs.((hessPp[:,:,k1,k2] - hessP[:,:,k1,k2]) ./ hessP[:,:,k1,k2]))
-            if abs(relErr) > 1e-4
+#             if abs(relErr) > 1e-4
                 flag = true
                 println("HU o=", ord, " el=", k1, ",", k2, "/", size(XP,1), ",", size(XP,2), " E = ", relErr, " HP=", maximum(abs.(hessP[:,:,k1,k2])), " A=", maximum(abs.(hessPp[:,:,k1,k2])))
 #                 println("diff")
@@ -686,11 +745,39 @@ function testPadeLoss()
 #                 display(hessP[:,:,k1,k2])
 #                 println("approximate")
 #                 display(hessPp[:,:,k1,k2])
-            end
+#             end
             XPp[k1,k2] = XP[k1,k2]
         end
+
+        # Hessian times vector testing
+        Cache = makeCache(M1, x1, dataIN, dataOUT)
+        Xdelta = project(PadeU(M1).M.manifolds[ord], PadeUpoint(x1).parts[ord], randn(size(XP)))
+#             @time ISFPadeGradientU(M1, x1, dataIN, dataOUT, ord, ii; DV=Cache, Xnew = randn(size(XP)))
+#             @time hessDelta = ISFPadeHessianVectorU(M1, x1, Xdelta, dataIN, dataOUT, ord, ii; DV=Cache, 
+#                                                     Xnew = project(PadeU(M1).M.manifolds[ord],randn(size(XP))))
+        @time hessDelta = ISFPadeHessianVectorU(M1, x1, Xdelta, dataIN, dataOUT, ord, ii; DV=Cache)
+        hessR = HessFullProjection(PadeU(M1).M.manifolds[ord], PadeUpoint(x1).parts[ord], gradP, hessP)
+        hessDelta0 = reshape(reshape(hessR, size(hessP,1)*size(hessP,2), :) * vec(Xdelta), size(hessDelta))
+        @show nrm = norm(hessDelta - hessDelta0)
+        
+        nhess = ApproxHessianFiniteDifference(
+            PadeU(M1).M.manifolds[ord],
+            PadeUpoint(x1).parts[ord],
+            (M, x) -> project(PadeU(M1).M.manifolds[ord], PadeUpoint(x1).parts[ord], ISFPadeGradientU(M1, x1, dataIN, dataOUT, ord, ii; DV=Cache, Xnew=x));
+            steplength=2^(-22),
+            retraction_method=PadeU(M1).R.retractions[ord],
+            vector_transport_method=PadeU(M1).mlist[ord].VT)
+        @time hessDeltaFD = nhess(PadeU(M1).M.manifolds[ord], PadeUpoint(x1).parts[ord], Xdelta)
+        @show nrm = norm(hessDelta - hessDeltaFD)
+        if nrm > 1
+            @show hessDelta
+            @show hessDeltaFD
+            @show hessDeltaFD ./ hessDelta
+#                 return nothing
+        end
     end
-    for ord=2:length(PadeUpoint(x1).parts)
+#     return
+    for ord=3:length(PadeUpoint(x1).parts)
         MP = PadeU(M1).mlist[ord]
         XP = PadeUpoint(x1).parts[ord]
         XPp = PadeUpoint(xp).parts[ord]
@@ -704,7 +791,7 @@ function testPadeLoss()
                 relErr = maximum(abs.((hessPp[:,:,k1,k2] - hessP[:,:,k1,k2]) ./ hessP[:,:,k1,k2]))
                 if abs(relErr) > 1e-4
                     flag = true
-                    println("HU node=", ii, "/", nr_nodes(MP), " el=", k1, ",", k2, "/", size(XP.parts[ii],1), ",", size(XP.parts[ii],2), " E = ", relErr, " HP=", maximum(abs.(hessP[:,:,k1,k2])), " A=", maximum(abs.(hessPp[:,:,k1,k2])))
+                    println("HU o=",  ord, " node=", ii, "/", nr_nodes(MP), " el=", k1, ",", k2, "/", size(XP.parts[ii],1), ",", size(XP.parts[ii],2), " E = ", relErr, " HP=", maximum(abs.(hessP[:,:,k1,k2])), " A=", maximum(abs.(hessPp[:,:,k1,k2])))
 #                     println("diff")
 #                     display(hessPp[:,:,k1,k2] - hessP[:,:,k1,k2])
 #                     println("analytic")
@@ -713,6 +800,32 @@ function testPadeLoss()
 #                     display(hessPp[:,:,k1,k2])
                 end
                 XPp.parts[ii][k1,k2] = XP.parts[ii][k1,k2]
+            end
+            # Hessian times vector testing
+            Cache = makeCache(M1, x1, dataIN, dataOUT)
+            Xdelta = project(PadeU(M1).M.manifolds[ord].manifolds[ii], PadeUpoint(x1).parts[ord].parts[ii], randn(size(XP.parts[ii])))
+#             @time ISFPadeGradientU(M1, x1, dataIN, dataOUT, ord, ii; DV=Cache, Xnew = randn(size(XP.parts[ii])))
+#             @time hessDelta = ISFPadeHessianVectorU(M1, x1, Xdelta, dataIN, dataOUT, ord, ii; DV=Cache, 
+#                                                     Xnew = project(PadeU(M1).M.manifolds[ord].manifolds[ii],randn(size(XP.parts[ii]))))
+            @time hessDelta = ISFPadeHessianVectorU(M1, x1, Xdelta, dataIN, dataOUT, ord, ii; DV=Cache)
+            hessR = HessFullProjection(PadeU(M1).M.manifolds[ord].manifolds[ii], PadeUpoint(x1).parts[ord].parts[ii], gradP, hessPp)
+            hessDelta0 = reshape(reshape(hessR, size(hessP,1)*size(hessP,2), :) * vec(Xdelta), size(hessDelta))
+            @show nrm = norm(hessDelta - hessDelta0)
+            
+            nhess = ApproxHessianFiniteDifference(
+                PadeU(M1).M.manifolds[ord].manifolds[ii],
+                PadeUpoint(x1).parts[ord].parts[ii],
+                (M, x) -> project(PadeU(M1).M.manifolds[ord].manifolds[ii], PadeUpoint(x1).parts[ord].parts[ii], ISFPadeGradientU(M1, x1, dataIN, dataOUT, ord, ii; DV=Cache, Xnew=x));
+                steplength=2^(-22),
+                retraction_method=PadeU(M1).R.retractions[ord].retractions[ii],
+                vector_transport_method=PadeU(M1).mlist[ord].VT.methods[ii])
+            @time hessDeltaFD = nhess(PadeU(M1).M.manifolds[ord].manifolds[ii], PadeUpoint(x1).parts[ord].parts[ii], Xdelta)
+            @show nrm = norm(hessDelta- hessDeltaFD)
+            if nrm > 1
+                @show hessDelta
+                @show hessDeltaFD
+                @show hessDeltaFD ./ hessDelta
+#                 return nothing
             end
         end
     end
@@ -878,7 +991,7 @@ function trust_region!(MF, XF, Loss, Gradient, GradientHessian, Cache, UpdateCac
             G .= Gradient(MF, XF)
         end
 #         print("e")
-        if (norm(G) < 1e-9) || (norm(G)/ng < 2^(-5))
+        if (norm(G) < 1e-9) # || (norm(G)/ng < 2^(-5))
             break
         end
         if stop
@@ -893,79 +1006,83 @@ end
 # Tstep: time step between samples
 # nearest: select the pair of eigenvalues closest to 'nearest'
 # it excludes the said frequency and returns the complement instead
+# return : X -> steady state
+#          S1 -> linear part of the 2D ROM
+#          U1 -> left invariant subspace (orthogonal)
+#          W1 -> right invariant subspace (orthogonal), such that U1 * W1 = I
+#          S2 -> the complementary 
+#          U2 -> left invariant subspace (orthogonal)
+#          W2 -> right invariant subspace (orthogonal), such that U1 * W1 = I
 # returns: S1 : the linear part of the ROM
 #          U1tr: the linear part of U transposed (left invariant subspace)
 #          W1: right invariant subspace
 #          Wperp: the complement of the left invariant subspace
 #          Sperp: the dynamics on the left invariant subspace
 function LinearFit(dataIN, dataOUT, Tstep, nearest)
-    scale = sqrt.(AmplitudeScaling(dataIN))
+    avgIN = sum(dataIN, dims=2) / size(dataIN,2)
+    avgOUT = sum(dataOUT, dims=2) / size(dataOUT,2)
+    XXt = (dataIN .- avgIN) * transpose(dataIN)
+    YXt = (dataOUT .- avgOUT) * transpose(dataIN)
+    # the first approximation
+    A = YXt * inv(XXt)
+    Xhat = -A * avgIN - avgOUT
+    Xstar = (I - A) \ Xhat
+#     println("Steady state 0")
+#     display(Xstar)
 
-    A = ((dataOUT.*scale)*transpose(dataIN)) * inv((dataIN.*scale)*transpose(dataIN))
-
-    # vecs: right eigenvectors
-    vals, vecs = eigen(A')
-    # ivecs: left eigenvectors
-    ivecs = inv(vecs)
-    cid = findall(!isreal, vals)
-    cvals = vals[cid]
-    cvecs = vecs[:,cid]
-    civecs = ivecs[:,cid]
-    args = abs.(angle.(cvals))
-    lst = sortperm(args)
+    # again with scaling until converges. 
+    # It is recursive because scaling is calculated based on previous estimate of steady state
+    for k=1:3
+        scale = sqrt.(AmplitudeScaling(dataIN, Xstar))
+        avgIN = sum(dataIN .* scale, dims=2) / size(dataIN,2)
+        avgOUT = sum(dataOUT .* scale, dims=2) / size(dataOUT,2)
+        XXt = ((dataIN .- avgIN).*scale) * transpose(dataIN)
+        YXt = ((dataOUT .- avgOUT).*scale) * transpose(dataIN)
+        # scaled approximation
+        A .= YXt * inv(XXt)
+        Xhat .= -A * avgIN - avgOUT
+        Xstar .= (I - A) \ Xhat
+#         println("Steady state ", k)
+#         display(Xstar)
+    end
+    
+    F0 = schur(A)
+    args = abs.(angle.(F0.values))
     println("------ START FITTING LINEAR MODEL ------")
     println("All frequencies [Hz]")
-    println(unique(args[lst])/Tstep/(2*pi))
+    println(unique(sort(args))/Tstep/(2*pi))
     println("All frequencies [1/rad]")
-    println(unique(args[lst])/Tstep)
-    mn, sel = findmin(abs.(abs.(args/Tstep/(2*pi)) .- nearest))
+    println(unique(sort(args))/Tstep)
+    # find the closest frequency to the specification
+    mn, sel = findmin(abs.(args/Tstep/(2*pi) .- nearest))
+    # find all the eigenvalues that has the same frequency
+    ids = findall(x -> isapprox(args[sel], x), args)
+    
+    # right eigenvectors
+    right_sel = zeros(Bool, size(args))
+    right_sel[ids] .= true
+    FR = ordschur(F0, right_sel)
+    # right invariant subspace
+    _W1 = FR.vectors[:,1:length(ids)]
+    _U2 = transpose(FR.vectors[:,length(ids)+1:end])
+    
+    # left eigenvectors
+    left_sel = .~ right_sel
+    FL = ordschur(F0, left_sel)
+    # left invariant subspace
+    _W2 = FL.vectors[:,1:end-length(ids)]
+    _U1 = transpose(FL.vectors[:,end-length(ids)+1:end])
 
-    # LEFT eigenevctors
-    vv = cvecs[:,sel]
-    tr0 = hcat(real(vv), imag(vv))
-    # orthogonalised vectors
-    U1tr = Array(qr(tr0).Q)
-    # linear ROM
-    S1 = (U1tr'*A)*U1tr
-
-    # RIGHT eigenvectors
-    ivv = civecs[:,sel]
-    itr0 = hcat(real(ivv), imag(ivv))
-    # orthogonalised vectors
-    W1 = Array(qr(itr0).Q)
-
-    # rest of the LEFT eigenvectors
-    rest = findall(abs.(abs.(args) .- abs(args[sel])) .> 1e-6)
-    ims = unique(imag.(vecs[:,rest]) * Diagonal(sign.(imag.(vals[rest]))),dims=2)
-    res = unique(real.(vecs[:,rest]),dims=2)
-    imid = findall(vec(sum(ims.^2, dims=1)) .> eps(1.0))
-    if isempty(imid)
-        pvec = res
-    else
-        pvec = [ims;;res]
-    end
-    Wperp = transpose(Array(qr(pvec).Q))
-    # Linear ROM in the rest of directions
-    Sperp = (Wperp*A)*Wperp'
-
-    # rest of the RIGHT eigenvectors
-    ims = unique(imag.(ivecs[:,rest]) * Diagonal(sign.(imag.(vals[rest]))),dims=2)
-    res = unique(real.(ivecs[:,rest]),dims=2)
-    imid = findall(vec(sum(ims.^2, dims=1)) .> eps(1.0))
-    if isempty(imid)
-        pvec = res
-    else
-        pvec = [ims;;res]
-    end
-    W1rest = transpose(Array(qr(pvec).Q))
-        
-    println("S1 frequencies [Hz] = ", sort(unique(abs.(angle.(eigvals(S1))/(2*pi))))/Tstep)
-    println("S1 frequencies [rad/s] = ", sort(unique(abs.(angle.(eigvals(S1)))))/Tstep)
-    println("Sperp frequencies [Hz] = ", sort(unique(abs.(angle.(eigvals(Sperp))/(2*pi))))/Tstep)
-    println("Sperp frequencies [rad/s] = ", sort(unique(abs.(angle.(eigvals(Sperp)))))/Tstep)
+    _S1 = (_U1*A)*transpose(_U1)
+    _S2 = (_U2*A)*transpose(_U2)
+    
+    println("S1 frequencies [Hz] = ", sort(unique(abs.(angle.(eigvals(_S1))/(2*pi))))/Tstep)
+    println("S1 frequencies [rad/s] = ", sort(unique(abs.(angle.(eigvals(_S1)))))/Tstep)
+    println("Sperp frequencies [Hz] = ", sort(unique(abs.(angle.(eigvals(_S2))/(2*pi))))/Tstep)
+    println("Sperp frequencies [rad/s] = ", sort(unique(abs.(angle.(eigvals(_S2)))))/Tstep)
     println("------ END FITTING LINEAR MODEL ------")
     
-    return S1, U1tr, W1, Sperp, Wperp, W1rest
+    return (X=Xstar, S1=_S1, U1=_U1, W1=_W1, S2=_S2, U2=_U2, W2=_W2)
 end
 
 @doc raw"""
@@ -977,23 +1094,40 @@ The routine then sets ``D \boldsymbol{U} (0) = \boldsymbol{U}_1`` and ``D \bolds
 """
 function GaussSouthwellLinearSetup(Misf, Xisf, dataINorig, dataOUTorig, Tstep, nearest; perbox=2000, retbox=4, nbox=10, exclude = false)
     dataINlin, dataOUTlin, linscale = dataPrune(dataINorig, dataOUTorig; perbox=perbox, retbox=retbox, nbox=nbox)
-    S1, U1tr, W1, Sperp, Wperp, W1rest = LinearFit(dataINlin, dataOUTlin, Tstep, nearest)
+    X, S1, U1, W1, S2, U2, W2 = LinearFit(dataINlin, dataOUTlin, Tstep, nearest)
+    @show norm(U2 * W1)
     if ~exclude
         # standard 2dim subspace
-        PadeUpoint(Xisf).parts[1] .= U1tr
+        @show PadeUpoint(Xisf).parts[1] .= -U1 * X
+        PadeUpoint(Xisf).parts[2] .= U1'
         setLinearPart!(PadeP(Misf), PadePpoint(Xisf), S1)
         # the restriction is by the remaining eigenvectors
-#         ISFPadeSetRestriction(Misf, W1)
-        # the restriction is the normal direction
-        ISFPadeSetRestriction(Misf, U1tr)
+        ISFPadeSetRestriction(Misf, W1)
+        Misf.Xstar .= X
     else
         # standard n-2 dim subspace of the complementary dynamics
-        PadeUpoint(Xisf).parts[1] .= Wperp'
+        PadeUpoint(Xisf).parts[2] .= U2'
         setLinearPart!(PadeP(Misf), PadePpoint(Xisf), Sperp)
-        ISFPadeSetRestriction(Misf, W1rest)
+        ISFPadeSetRestriction(Misf, W2)
+        Misf.Xstar = X
     end
-    return Sperp, Wperp, W1rest
+    return S2, U2, W2, X
 end
+
+mutable struct DebugEntryNorm <: DebugAction
+    io::IO
+    format::String
+    field::Symbol
+    function DebugEntryNorm(f::Symbol; prefix="$f:", format="$prefix %s", io::IO=stdout)
+        return new(io, format, f)
+    end
+end
+
+function (d::DebugEntryNorm)(::Problem, o::Options, i)
+    (i >= 0) && Printf.format(d.io, Printf.Format(d.format), norm(getfield(o, d.field)))
+    return nothing
+end
+
 
 @doc raw"""
     GaussSouthwellOptim(Misf, Xisf, dataIN, dataOUT, scale, Tstep, nearest; name = "", maxit=8000, gradstop = 1e-10)
@@ -1012,12 +1146,14 @@ function GaussSouthwellOptim(Misf, Xisf, dataIN, dataOUT, scale, Tstep, nearest;
     UPD_GRAD = 3
     radius = 0.5
     radius_max = 10.0
+    updateCache!(Cache, Misf, Xisf, dataIN, dataOUT)
     grall = ISFPadeRiemannianGradient(Misf, Xisf, dataIN, dataOUT; DV=Cache)
     grall .= project(Misf, Xisf, grall)
     loss_table = ones(2*UPD_GRAD+1)
     id = (1,0,0)
     for it=1:maxit
         if mod(it,UPD_GRAD) == 0
+            updateCache!(Cache, Misf, Xisf, dataIN, dataOUT)
             grall .= ISFPadeRiemannianGradient(Misf, Xisf, dataIN, dataOUT; DV=Cache)
             grall .= project(Misf, Xisf, grall)
         end
@@ -1064,11 +1200,37 @@ function GaussSouthwellOptim(Misf, Xisf, dataIN, dataOUT, scale, Tstep, nearest;
             end
         elseif id[1] == 3
             # U linear
-            if id[2] == 1
+            if id[2] < UNLID
                 ord = id[2]
                 ii = 1
-                grall.parts[3].parts[1] .= 0
-                print(it, ". U ", ord, " ii ", ii)
+                grall.parts[3].parts[ord] .= 0
+                print(it, ". U ", ord-1, " ii ", ii)
+                # The alternative style -- gradient calculation
+#                 res = trust_regions(
+#                     PadeU(Misf).M.manifolds[ord], 
+#                     (M, x) -> ISFPadeLoss(Misf, Xisf, dataIN, dataOUT; DV=Cache, Xnew=x, ord=ord, ii=ii), 
+#                     (M, x) -> project(PadeU(Misf).M.manifolds[ord], PadeUpoint(Xisf).parts[ord], 
+#                                       ISFPadeGradientU(Misf, Xisf, dataIN, dataOUT, ord, ii; DV=Cache, Xnew=x)),
+# #                     (M, x, Xp) -> ISFPadeHessianVectorU(Misf, Xisf, Xp, dataIN, dataOUT, ord, ii; DV=Cache, Xnew=x),
+#                     ApproxHessianFiniteDifference(
+#                         PadeU(Misf).M.manifolds[ord],
+#                         PadeUpoint(Xisf).parts[ord],
+#                         (M, x) -> project(PadeU(Misf).M.manifolds[ord], PadeUpoint(Xisf).parts[ord], 
+#                                           ISFPadeGradientU(Misf, Xisf, dataIN, dataOUT, ord, ii; DV=Cache, Xnew=x));
+#                         steplength=2^(-20),
+#                         retraction_method=PadeU(Misf).R.retractions[ord],
+#                         vector_transport_method=PadeU(Misf).mlist[ord].VT
+#                         ),
+#                     PadeUpoint(Xisf).parts[ord],
+#                     retraction_method = PadeU(Misf).R.retractions[ord],
+#                     stopping_criterion=StopWhenAny(
+#                         StopWhenGradientNormLess(1e-8),
+#                         StopAfterIteration(20)
+#                         ),
+#                     debug = [:Iteration, " | ", DebugCost(;format="L=%.4e "), DebugEntryNorm(:gradient; format="G=%.4e "), "\n"]
+#                     )
+#                 PadeUpoint(Xisf).parts[ord] .= res
+                # The old style -- direct hessian calculation
                 radius = trust_region!(Misf, Xisf, 
                         (MF, XF) -> ISFPadeLoss(MF, XF, dataIN, dataOUT; DV=Cache),
                         (MF, XF) -> ISFPadeGradientU(MF, XF, dataIN, dataOUT, ord, ii; DV=Cache),
@@ -1076,13 +1238,42 @@ function GaussSouthwellOptim(Misf, Xisf, dataIN, dataOUT, scale, Tstep, nearest;
                         Cache, (c) -> (),
                         PadeU(Misf).mlist[ord], PadeUpoint(Xisf).parts[ord], PadeU(Misf).R.retractions[ord],
                         radius, radius_max; itmax = 20, manifold = true)
+                # printing the steady state
+                if ord == 1
+                    println("Steady state = ", PadeUpoint(Xisf).parts[ord])
+                end
             else
                 # this is the most complicated part
-                # The old style -- direct hessian calculation
                 ord = id[2]
                 ii = id[3]
                 grall.parts[3].parts[ord].parts[ii] .= 0
-                print(it, ". U ", ord, " ii ", ii)
+                print(it, ". U ", ord-1, " ii ", ii)
+                # The alternative style -- gradient calculation
+#                 res = trust_regions(
+#                     PadeU(Misf).M.manifolds[ord].manifolds[ii], 
+#                     (M, x) -> ISFPadeLoss(Misf, Xisf, dataIN, dataOUT; DV=Cache, Xnew=x, ord=ord, ii=ii), 
+#                     (M, x) -> project(PadeU(Misf).M.manifolds[ord].manifolds[ii], PadeUpoint(Xisf).parts[ord].parts[ii], 
+#                                       ISFPadeGradientU(Misf, Xisf, dataIN, dataOUT, ord, ii; DV=Cache, Xnew=x)),
+#                     (M, x, Xp) -> ISFPadeHessianVectorU(Misf, Xisf, Xp, dataIN, dataOUT, ord, ii; DV=Cache, Xnew=x),
+# #                     ApproxHessianFiniteDifference(
+# #                         PadeU(Misf).M.manifolds[ord].manifolds[ii],
+# #                         PadeUpoint(Xisf).parts[ord].parts[ii],
+# #                         (M, x) -> project(PadeU(Misf).M.manifolds[ord].manifolds[ii], PadeUpoint(Xisf).parts[ord].parts[ii], 
+# #                                           ISFPadeGradientU(Misf, Xisf, dataIN, dataOUT, ord, ii; DV=Cache, Xnew=x));
+# #                         steplength=2^(-20),
+# #                         retraction_method=PadeU(Misf).R.retractions[ord].retractions[ii],
+# #                         vector_transport_method=PadeU(Misf).mlist[ord].VT.methods[ii]
+# #                         ),
+#                     PadeUpoint(Xisf).parts[ord].parts[ii],
+#                     retraction_method = PadeU(Misf).R.retractions[ord].retractions[ii],
+#                     stopping_criterion=StopWhenAny(
+#                         StopWhenGradientNormLess(1e-8),
+#                         StopAfterIteration(20)
+#                         ),
+#                     debug = [:Iteration, " | ", DebugCost(;format="L=%.4e "), DebugEntryNorm(:gradient; format="G=%.4e "), "\n"]
+#                     )
+#                 PadeUpoint(Xisf).parts[ord].parts[ii] .= res
+                # The old style -- direct hessian calculation
                 radius = trust_region!(Misf, Xisf, 
                         (MF, XF) -> ISFPadeLoss(MF, XF, dataIN, dataOUT; DV=Cache),
                         (MF, XF) -> ISFPadeGradientU(MF, XF, dataIN, dataOUT, ord, ii; DV=Cache),
@@ -1104,75 +1295,20 @@ function GaussSouthwellOptim(Misf, Xisf, dataIN, dataOUT, scale, Tstep, nearest;
     return Misf, Xisf
 end
     
-mutable struct DebugEig <: DebugAction
-    print::Function
-    t0
-    Tstep
-    DebugEig(Tstep, print::Function=print) = new(print, time(), Tstep)
-end
-
-function (d::DebugEig)(p::P,o::O,i::Int) where {P <: Problem, O <: Options} 
-    d.print(@sprintf("time = %.1f[s] ", time()-d.t0), 
-            @sprintf("F(x) = %.4e ", get_cost(p, o.x)), 
-            @sprintf("G(x) = %.4e ", norm(p.M,o.x,o.gradient)),
-            "|",abs.(eigvals(getLinearPart(p.M.M.manifolds[1],o.x.parts[1]))), 
-            angle.(eigvals(getLinearPart(p.M.M.manifolds[1],o.x.parts[1])))/d.Tstep/(2*pi))
-end
-
-"""
-    This is unused, because it is painfully slow
-"""
-function TrustRegionOptim(Misf, Xisf, dataINorig, dataOUTorig, datascale, Tstep, nearest; perbox=2000, name = "", maxit=8000, gradstop = 1e-10)
-    if perbox > 0
-        dataIN, dataOUT, scale = dataPrune(dataINorig, dataOUTorig; perbox=perbox, scale=datascale)
-    else
-        dataIN = dataINorig
-        dataOUT = dataOUTorig
-        scale = 1.0
-    end
-    
-#     Xres = quasi_Newton(
-#         Misf, 
-#         (M, x) -> ISFPadeLoss(M, x, dataIN, dataOUT), 
-#         (M, x) -> ISFPadeRiemannianGradient(M, x, dataIN, dataOUT),
-#         Xisf;
-#         retraction_method = Misf.R,
-#         vector_transport_method = Misf.VT,
-#         step_size=WolfePowellLineseach(Misf.R, Misf.VT),
-#         stopping_criterion=StopAfterIteration(maxit) | StopWhenGradientNormLess(gradstop),
-#         debug=[:Iteration, " | ", :Cost, DebugEig(Tstep), "\n", :Stop],
-#     )
-    
-    Xres = trust_regions(Misf, 
-                  (M, x) -> ISFPadeLoss(M, x, dataIN, dataOUT), 
-                  (M, x) -> ISFPadeRiemannianGradient(M, x, dataIN, dataOUT),
-                  ApproxHessianFiniteDifference(
-                Misf,
-                Xisf,
-                (M, x) -> ISFPadeRiemannianGradient(M, x, dataIN, dataOUT);
-                steplength=2^(-8),
-                retraction_method=Misf.R,
-                vector_transport_method=Misf.VT,
-            ),
-                  Xisf,
-                  retraction_method = Misf.R,
-#                   max_trust_region_radius=0.5,
-                  stopping_criterion=StopWhenAny(
-                        StopWhenGradientNormLess(gradstop),
-                        StopAfterIteration(maxit)
-                        ),
-                  debug = [
-            :Stop,
-            :Iteration,
-            " | ",
-            DebugEig(Tstep),
-            "\n",
-            1,
-        ])
-    
-    Xisf .= Xres
-    return Misf, Xisf
-end
+# mutable struct DebugEig <: DebugAction
+#     print::Function
+#     t0
+#     Tstep
+#     DebugEig(Tstep, print::Function=print) = new(print, time(), Tstep)
+# end
+# 
+# function (d::DebugEig)(p::P,o::O,i::Int) where {P <: Problem, O <: Options} 
+#     d.print(@sprintf("time = %.1f[s] ", time()-d.t0), 
+#             @sprintf("F(x) = %.4e ", get_cost(p, o.x)), 
+#             @sprintf("G(x) = %.4e ", norm(p.M,o.x,o.gradient)),
+#             "|",abs.(eigvals(getLinearPart(p.M.M.manifolds[1],o.x.parts[1]))), 
+#             angle.(eigvals(getLinearPart(p.M.M.manifolds[1],o.x.parts[1])))/d.Tstep/(2*pi))
+# end
 
 #----------------------------------------------------------------------------------------------------------------------------------------
 # END ISFPadeManifold

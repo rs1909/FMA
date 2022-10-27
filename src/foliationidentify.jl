@@ -36,9 +36,10 @@ is a tuple with elements
   8. something mysterious
   9. amplitude of each data point using ``\left\| \boldsymbol{w}\, \boldsymbol{U}\left( \boldsymbol{W} \left( \boldsymbol{x}_k\right)\right) \right\|``
 """
-function FoliationIdentify(dataINorig, dataOUTorig, Tstep, embedscales, SysName, freq; orders = (P=7,Q=1,U=5,W=5), iterations = (f=4000, l=30), kappa = 0.2)
+function FoliationIdentify(dataINorig, dataOUTorig, Tstep, embedscales, SysName, freq; orders = (P=7,Q=1,U=5,W=5), iterations = (f=4000, l=30), kappa = 0.2, rank_deficiency = 0, node_rank = 4)
     # need # of iterations for each optimisation
     # need list of tolerances, gradient, cost function
+    disable_cache()
     NDIM = size(dataINorig,1)
     nonlin_perbox = 12000
     
@@ -53,11 +54,10 @@ function FoliationIdentify(dataINorig, dataOUTorig, Tstep, embedscales, SysName,
     dout = 2
 
     # ISF
-    Misf = ISFPadeManifold(dout, din, orders.P, orders.Q, orders.U, zeros(din, dout))
+    Misf = ISFPadeManifold(dout, din, orders.P, orders.Q, orders.U, zeros(din, dout), node_rank = node_rank)
     Xisf = zero(Misf)
-    Sperp, Wperp, W1rest = GaussSouthwellLinearSetup(Misf, Xisf, dataIN, dataOUT, Tstep, freq; perbox=14000, retbox=3, nbox=6, exclude = false)
-#     @load "ISFdata-$(SysName).bson" Misf Xisf Tstep scale
-    Misf, Xisf = GaussSouthwellOptim(Misf, Xisf, dataIN, dataOUT, scale, Tstep, freq; name = SysName, maxit=iterations.f)
+    S2, U2, W2, Xstar = GaussSouthwellLinearSetup(Misf, Xisf, dataIN, dataOUT, Tstep, freq; perbox=14000, retbox=3, nbox=6, exclude = false)
+#     Misf, Xisf = GaussSouthwellOptim(Misf, Xisf, dataIN, dataOUT, scale, Tstep, freq; name = SysName, maxit=iterations.f)
 
     scaleOLD = scale
     @load "ISFdata-$(SysName).bson" Misf Xisf Tstep scale
@@ -71,10 +71,12 @@ function FoliationIdentify(dataINorig, dataOUTorig, Tstep, embedscales, SysName,
     #---------------------------------------------------------
     # Fitting a manifold as an immersion
     #---------------------------------------------------------
-    Mimm = ISFImmersionManifold(2, NDIM, orders.W, kappa)
+    Mimm = ISFImmersionManifold(2, NDIM, orders.W, kappa; rank_deficiency = rank_deficiency, X=Xstar)
     Ximm = zero(Mimm)
     
-    Xres, dataParIN, dataParOUT = ISFImmersionSolve!(Mimm, Ximm, Misf, Xisf, MU, XU, Wperp, Sperp, dataIN, dataOUT; maxit=iterations.l)
+    Xres, dataParIN, dataParOUT = ISFImmersionSolve!(Mimm, Ximm, Misf, Xisf, MU, XU, S2, U2, dataIN, dataOUT; maxit=iterations.l, rank_deficiency = rank_deficiency, Tstep = Tstep)
+    println("B frequencies [Hz] = ", sort(unique(abs.(angle.(eigvals(ImmersionBpoint(Xres)))/(2*pi))))/Tstep)
+    println("B frequencies [rad/s] = ", sort(unique(abs.(angle.(eigvals(ImmersionBpoint(Xres))))))/Tstep)
     
     @save "ManifoldImmersion-$(SysName).bson" Mimm Xres Tstep scale dataParIN dataParOUT
 #     @load "ManifoldImmersion-$(SysName).bson" Mimm Xres Tstep scale dataParIN dataParOUT
@@ -89,7 +91,9 @@ function FoliationIdentify(dataINorig, dataOUTorig, Tstep, embedscales, SysName,
 
     M_A, A00 = ManifoldAmplitudeSquare(MWt, XWt)
 
-    dataAmps2 = sqrt.(sum( (transpose(vec(embedscales)) * Eval(MWt, XWt, [dataParIN])) .^ 2, dims=1))
+    ROMdata = (transpose(vec(embedscales)) * Eval(MWt, XWt, [dataParIN]))
+    dataAmps2 = sqrt.(dropdims(sum(ROMdata .^ 2, dims=1),dims=1)) .* sign.(ROMdata[1,:])
+    @show size(sign.(ROMdata[1,:])), size(sqrt.(sum(ROMdata .^ 2, dims=1))), size(dataAmps2)
     
     data_freq, data_damp, data_r, freq_old, damp_old, r_old = MAPManifoldFrequencyDamping(MWt, XWt, MS, XS, r, Tstep; output = transpose(vec(embedscales)))
     Wamp = [ sqrt(Eval(M_A, A00, [[x]])[1]) for x in r_old]

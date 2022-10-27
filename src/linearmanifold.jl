@@ -11,8 +11,8 @@ struct LinearManifold{ndim, n, transp, 𝔽} <: AbstractManifold{𝔽}
     VT       :: AbstractVectorTransportMethod
 end
 
-function HessProjection(M::LinearManifold{ndim, n, transp}) where {ndim, n, transp}
-    HessProjection(M.M)
+function HessProjection(M::LinearManifold, X, grad, HessV, V)
+    HessProjection(M.M, X, grad, HessV, V)
 end
 
 function HessFullProjection(M::LinearManifold{ndim, n, transp}, X, grad, hess) where {ndim, n, transp}
@@ -142,6 +142,7 @@ end
 function Eval(M::LinearManifold{ndim, n, true}, X, data, topdata = nothing; DV = nothing) where {ndim, n}
     if topdata == nothing
 #         @show size(X), size(data[1]), size(data[1][1])
+#         @show size(transpose(X) * data[1])
         return transpose(X) * data[1]
     else
 #         @show size(X), size(topdata), size(data[1])
@@ -241,6 +242,10 @@ end
 # same as wDF
 function L0_DF(M::LinearManifold{ndim, n, transp}, X, DV, data, L0, ii) where {ndim, n, transp}
     return wDF(M, X, [data], L0)
+end
+
+function DF_dt(M::LinearManifold, X, DV, data, dt, ii)
+    return Eval(M, dt, [data])
 end
 
 # DF is the identity
@@ -418,4 +423,150 @@ function testLin()
     @show res_orig .- res
     @show res_orig
     @show res
+end
+
+struct ConstantManifold{ndim, 𝔽} <: AbstractManifold{𝔽}
+    M        :: AbstractManifold{𝔽} # Euclidean{Tuple{n, ndim}, 𝔽}
+    R        :: AbstractRetractionMethod
+    VT       :: AbstractVectorTransportMethod
+end
+
+function ConstantManifold(ndim, field::AbstractNumbers=ℝ)
+    return ConstantManifold{ndim, field}(Euclidean(ndim, 1; field), ExponentialRetraction(), ParallelTransport())
+end
+
+function HessProjection(M::ConstantManifold)
+    HessProjection(M.M)
+end
+
+function HessFullProjection(M::ConstantManifold, X, grad, hess)
+    return HessFullProjection(M.M, X, grad, hess)
+end
+
+function retract!(M::ConstantManifold, q, p, X, method::AbstractRetractionMethod)
+    return retract!(M.M, q, p, X, M.R)
+end
+
+function retract!(M::ConstantManifold, q, p, X, method::ExponentialRetraction)
+    return retract!(M.M, q, p, X, M.R)
+end
+
+function retract(
+    M::ConstantManifold,
+    p,
+    X,
+    m::AbstractRetractionMethod = default_retraction_method(M),
+)
+#     q = allocate_result(M, retract, p, X)
+    return retract(M.M, p, X, m)
+end
+
+function vector_transport_to!(M::ConstantManifold, Y, p, X, q, method::AbstractVectorTransportMethod)
+    return vector_transport_to!(M.M, Y, p, X, q, method)
+end
+
+function vector_transport_to(M::ConstantManifold, p, X, q, method::AbstractVectorTransportMethod)
+    return vector_transport_to(M.M, p, X, q, method)
+end
+
+function project!(M::ConstantManifold, Y, p, X)
+    return project!(M.M, Y, p, X)
+end
+
+function zero(M::ConstantManifold{ndim, field}) where {ndim, field}
+    return project(M.M, zeros(ndim,1))
+end
+
+function randn(M::ConstantManifold{ndim, field}) where {ndim, field}
+    return project(M.M, randn(ndim,1))
+end
+
+function zero_vector!(M::ConstantManifold, X, p)
+    return zero_vector!(M.M, X, p)
+end
+
+function zero_tangent(M::ConstantManifold{ndim, field}) where {ndim, field}
+    return zeros(ndim,1)
+end
+
+function manifold_dimension(M::ConstantManifold)
+    return manifold_dimension(M.M)
+end
+
+function inner(M::ConstantManifold, p, X, Y)
+    return inner(M.M, p, X, Y)
+end
+
+function getel(M::ConstantManifold{ndim, field}, X, idx) where {ndim, field}
+    return X[idx[1],1]
+end
+
+function makeCache(M::ConstantManifold, X, data, topdata = nothing)
+    return nothing
+end
+
+function updateCache!(DV::Nothing, M::ConstantManifold, X, data, topdata = nothing)
+    return nothing
+end
+
+function Eval(M::ConstantManifold, X, data, topdata = nothing; DV = nothing)
+    if topdata == nothing
+        res = zeros(size(X,1), size(data[1],2))
+#         @show size(res)
+        for k=1:size(data[1],2)
+            res[:,k] .= X
+        end
+        return res
+    else
+        return transpose(X) * topdata
+    end
+    return nothing
+end
+
+function L0_DF(M::ConstantManifold{ndim, field}, X, DV, data, L0, ii) where {ndim, field}
+#     @show "Const_L0_DF"
+    return sum(L0, dims=2)
+end
+
+# Hessian with respect to parameters in U
+# needs JPoUox, JQoUoy, DUox, DUoy
+# then  L0J2PoUox, L0J2QoUoy
+# results in 
+#       DUox^T x JPoUox^T x JPoUox x DUox   -> 1
+#     + DUoy^T x JQoUoy^T x JQoUoy x DUoy   -> 2
+#     - DUox^T x JPoUox^T x JQoUoy x DUoy   -> 3
+#     - DUoy^T x JQoUoy^T x JPoUox x DUox   -> 3^T
+#     - DUox^T x L0J2PoUox x DUox
+#     + DUoy^T x L0J2QoUoy x DUoy
+# The Jacobians JX, JY are evaluated on the whole polynomial!
+#        DFT_JFT_JF_DF(MU,                            N.A., N.A., JPoUox, JQoUoy, L0J2PoUox, L0J2QoUoy, dataIN, dataOUT, N.A.)
+function DFT_JFT_JF_DF(M::ConstantManifold{n, field}, DVX,  DVY,  JX,     JY,     L0J2X,     L0J2Y,     dataX,  dataY,   ii; scale = alwaysone()) where {n, field}
+    H2 = zeros(size(JX,2),size(JX,2))
+    for p1=1:size(JX,2), p2=1:size(JX,2), k=1:size(JX,3)
+        for j=1:size(JX,1)
+            @inbounds H2[p1,p2] += (JX[j,p1,k] * JX[j,p2,k] + JY[j,p1,k] * JY[j,p2,k] - JX[j,p1,k] * JY[j,p2,k] - JY[j,p1,k] * JX[j,p2,k])/scale[k] 
+        end
+        @inbounds H2[p1,p2] += - L0J2X[p1,p2,k] + L0J2Y[p1,p2,k]
+    end
+    return reshape(H2, size(H2,1), 1, size(H2,2), 1)
+end
+
+function DF_dt(M::ConstantManifold{n, field}, X, DV, data, dt, ii) where {n, field}
+    res = zeros(size(X,1), size(data,2))
+    for k=1:size(data,2)
+        res[:,k] .= X
+    end
+    return res
+end
+
+function HessProjection(M::ConstantManifold, X, grad, HessV, V)
+    HessProjection(M.M, X, grad, HessV, V)
+end
+
+function tensorVecsInvalidate(DV, M::Union{ConstantManifold,LinearManifold}, ii)
+    return nothing
+end
+
+function tensorBVecsInvalidate(DV, M::Union{ConstantManifold,LinearManifold}, ii)
+    return nothing
 end

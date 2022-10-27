@@ -290,7 +290,7 @@ end
 
 function AENCLoss(M::AENCManifold{ndim, mdim, Worder, Sorder, true, field}, X, dataIN, dataOUT) where {ndim, mdim, Worder, Sorder, orthogonal, field}
     datalen = size(dataIN,2)
-    scale = AmplitudeScaling(dataIN)
+    scale = AmplitudeScaling(dataIN, zeros(size(dataIN,1)))
     #  Wl * S( U * x ) + Wnl( S( U * x ) ) - y according to the commutative diagram
     Ux = Eval(AENC_U(M), AENC_Upoint(X), [dataIN])
     SUx = Eval(AENC_S(M), AENC_Spoint(X), [Ux])
@@ -301,7 +301,7 @@ end
 
 function AENCGradient(M::AENCManifold{ndim, mdim, Worder, Sorder, true, field}, X, dataIN, dataOUT) where {ndim, mdim, Worder, Sorder, orthogonal, field}
     datalen = size(dataIN,2)
-    scale = AmplitudeScaling(dataIN)
+    scale = AmplitudeScaling(dataIN, zeros(size(dataIN,1)))
     # Wl * S( U * x ) + Wnl( S( U * x ) ) - y according to the commutative diagram
     # and U = Wl^T
     Ux = Eval(AENC_U(M), AENC_Upoint(X), [dataIN])
@@ -329,7 +329,7 @@ end
 
 function AENCLoss(M::AENCManifold{ndim, mdim, Worder, Sorder, false, field}, X, dataIN, dataOUT) where {ndim, mdim, Worder, Sorder, orthogonal, field}
     datalen = size(dataIN,2)
-    scale = AmplitudeScaling(dataIN)
+    scale = AmplitudeScaling(dataIN, zeros(size(dataIN,1)))
     #  Wnl( S( U * x ) ) - y according to the commutative diagram
     Ux = Eval(AENC_U(M), AENC_Upoint(X), [dataIN])
     SUx = Eval(AENC_S(M), AENC_Spoint(X), [Ux])
@@ -340,7 +340,7 @@ end
 
 function AENCGradient(M::AENCManifold{ndim, mdim, Worder, Sorder, false, field}, X, dataIN, dataOUT) where {ndim, mdim, Worder, Sorder, orthogonal, field}
     datalen = size(dataIN,2)
-    scale = AmplitudeScaling(dataIN)
+    scale = AmplitudeScaling(dataIN, zeros(size(dataIN,1)))
     # Wnl( S( U * x ) ) - y according to the commutative diagram
     # and U = Wl^T
     Ux = Eval(AENC_U(M), AENC_Upoint(X), [dataIN])
@@ -368,7 +368,7 @@ end
 # works for both as W is not featured!
 function AENCROMLoss(M::AENCManifold{ndim, mdim, Worder, Sorder, orthogonal, field}, X, dataIN, dataOUT) where {ndim, mdim, Worder, Sorder, orthogonal, field}
     datalen = size(dataIN,2)
-    scale = AmplitudeScaling(dataIN)
+    scale = AmplitudeScaling(dataIN, zeros(size(dataIN,1)))
     #  S( U * x ) - U * y
     Ux = Eval(AENC_U(M), AENC_Upoint(X), [dataIN])
     Uy = Eval(AENC_U(M), AENC_Upoint(X), [dataOUT])
@@ -380,7 +380,7 @@ end
 # works for both as W is not featured!
 function AENCROMGradient(M::AENCManifold{ndim, mdim, Worder, Sorder, orthogonal, field}, X, dataIN, dataOUT) where {ndim, mdim, Worder, Sorder, orthogonal, field}
     datalen = size(dataIN,2)
-    scale = AmplitudeScaling(dataIN)
+    scale = AmplitudeScaling(dataIN, zeros(size(dataIN,1)))
     #  S( U * x ) - U * y
     Ux = Eval(AENC_U(M), AENC_Upoint(X), [dataIN])
     Uy = Eval(AENC_U(M), AENC_Upoint(X), [dataOUT])
@@ -394,7 +394,7 @@ end
 # ORTHOGONAL!
 function AENCFitLoss(M::AENCManifold{ndim, mdim, Worder, Sorder, true, field}, X, data) where {ndim, mdim, Worder, Sorder, orthogonal, field}
     datalen = size(data,2)
-    scale = AmplitudeScaling(data)
+    scale = AmplitudeScaling(data, zeros(size(data,1)))
     #  Wl * U * x + Wnl( U * x ) - y according to the commutative diagram
     Ux = Eval(AENC_U(M), AENC_Upoint(X), [data])
     WUx = Eval(AENC_Wl(M), AENC_Wlpoint(X), [Ux]) + Eval(AENC_Wnl(M), AENC_Wnlpoint(X), [Ux])
@@ -405,7 +405,7 @@ end
 # ORTHOGONAL!
 function AENCFitGradient(M::AENCManifold{ndim, mdim, Worder, Sorder, true, field}, X, data) where {ndim, mdim, Worder, Sorder, orthogonal, field}
     datalen = size(data,2)
-    scale = AmplitudeScaling(data)
+    scale = AmplitudeScaling(data, zeros(size(data,1)))
     #  Wl * U * x + Wnl( U * x ) - y according to the commutative diagram
     Ux = Eval(AENC_U(M), AENC_Upoint(X), [data])
     WUx = Eval(AENC_Wl(M), AENC_Wlpoint(X), [Ux]) + Eval(AENC_Wnl(M), AENC_Wnlpoint(X), [Ux])
@@ -429,7 +429,7 @@ end
 
 function AENCFitLoss(M::AENCManifold{ndim, mdim, Worder, Sorder, false, field}, X, data) where {ndim, mdim, Worder, Sorder, orthogonal, field}
     datalen = size(data,2)
-    scale = AmplitudeScaling(data)
+    scale = AmplitudeScaling(data, zeros(size(data,1)))
     #  Wnl(U * x) - x
     Ux = Eval(AENC_U(M), AENC_Upoint(X), [data])
     WUx = Eval(AENC_Wnl(M), AENC_Wnlpoint(X), [Ux])
@@ -439,7 +439,7 @@ end
 
 function AENCFitGradient(M::AENCManifold{ndim, mdim, Worder, Sorder, false, field}, X, data) where {ndim, mdim, Worder, Sorder, orthogonal, field}
     datalen = size(data,2)
-    scale = AmplitudeScaling(data)
+    scale = AmplitudeScaling(data, zeros(size(data,1)))
     #  Wnl(U * x) - x
     Ux = Eval(AENC_U(M), AENC_Upoint(X), [data])
     WUx = Eval(AENC_Wnl(M), AENC_Wnlpoint(X), [Ux])
@@ -512,7 +512,7 @@ function AENCIndentify(dataINorig, dataOUTorig, Tstep, embedscales, freq, orders
     dout = 2
     
     dataINlin, dataOUTlin, linscale = dataPrune(dataINorig, dataOUTorig; perbox=14000, retbox=6, nbox=6)
-    S1, U1tr, W1, Sperp, Wperp = LinearFit(dataINlin, dataOUTlin, Tstep, freq)
+    X, S1, U1, W1, S2, U2, W2 = LinearFit(dataINlin, dataOUTlin, Tstep, freq)
     
     # if orthogonal
     M = AENCManifold(NDIM, dout, orders.S, orders.W)

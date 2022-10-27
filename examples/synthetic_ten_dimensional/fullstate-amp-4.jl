@@ -7,12 +7,12 @@ function execute()
     # MODEL FULL STATE
     @load "data/sys10dimTrainRED-4.bson" xs ys Tstep
     embedscales = ones(1,10)/10
-    SysName = "10dim-FULL-RED-4"
+    SysName = "10dim-FULL-CAS4-4"
     dataINorig = xs
     dataOUTorig = ys
 
     freq = 1/2/pi
-    bb = FoliationIdentify(dataINorig, dataOUTorig, Tstep, embedscales, SysName, freq; iterations = (f=8000, l=30))
+    bb = FoliationIdentify(dataINorig, dataOUTorig, Tstep, embedscales, SysName, freq; iterations = (f=8000, l=30), node_rank = 4)
     @save "FigureData-$(SysName).bson" bb
     return bb
 end

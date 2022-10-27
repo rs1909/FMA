@@ -1,9 +1,10 @@
 
-struct ISFImmersionManifold{mdim, ndim, Worder, C, 𝔽} <: AbstractManifold{𝔽}
+struct ISFImmersionManifold{mdim, ndim, deficiency, Worder, C, 𝔽} <: AbstractManifold{𝔽}
     mlist
     M        :: ProductManifold 
     R        :: ProductRetraction 
     VT       :: ProductVectorTransport
+    Xstar    :: AbstractArray
 end
 
 # mdim : number of immersion parameters
@@ -22,16 +23,30 @@ Function arguments arguments are
   * `ndim`: system dimensionality
   * `Worder`: polynomial order of ``\boldsymbol{W}_{0}``
 """
-function ISFImmersionManifold(mdim, ndim, Worder, kappa=0.0, field::AbstractNumbers=ℝ)
-    mlist = (LinearTallManifold(ndim - mdim, ndim - mdim, field), DenseNonlinearManifold(mdim, ndim - mdim, Worder), OrthogonalFlatManifold(ndim, ndim - mdim; field=field))
+function ISFImmersionManifold(mdim, ndim, Worder, kappa=0.0, field::AbstractNumbers=ℝ; rank_deficiency = 0, X = zeros(ndim))
+    # to solve the equation
+    #   Uh(y) - B Uh(x) = 0, where
+    #   Uh(x) = Up x - W0( U(x) ), where
+    #   U(x) is already known
+    # To initialise:
+    #   Assume that 
+    #       - A is the full linear dynamics
+    #       - Vs . A = C . Vs represents the dynamics transversal to the manifold
+    # In case C has no (nearly) zero singular value, set
+    #   B  = C
+    #   Up = Vs
+    # In case C has singular values, that is C = Cu . Cs . Cv^T, set
+    #   B  = (Cu^T . Cv)^{-1} . Cs
+    #   Up = Bv^T . Vs
+    mlist = (LinearTallManifold(ndim - mdim, ndim - mdim, field), DenseNonlinearManifold(mdim, ndim - mdim, Worder), ConstantManifold(ndim - mdim, field), OrthogonalFlatManifold(ndim, ndim - mdim; field=field))
     M = ProductManifold(mlist...)
     R = ProductRetraction(map(x->getfield(x,:R), mlist)...)
     VT = ProductVectorTransport(map(x->getfield(x,:VT), mlist)...)
     if kappa == 0.0
-        return ISFImmersionManifold{mdim, ndim, Worder, 0.0, field}(mlist, M, R, VT)
+        return ISFImmersionManifold{mdim, ndim, rank_deficiency, Worder, 0.0, field}(mlist, M, R, VT, X)
     else
         println("C = ", -1/(2*kappa^2))
-        return ISFImmersionManifold{mdim, ndim, Worder, -1/(2*kappa^2), field}(mlist, M, R, VT)
+        return ISFImmersionManifold{mdim, ndim, rank_deficiency, Worder, -1/(2*kappa^2), field}(mlist, M, R, VT, X)
     end
 end
 
@@ -51,12 +66,20 @@ function ImmersionW0point(X)
     return X.parts[2]
 end
 
-function ImmersionWp(M::ISFImmersionManifold)
+function ImmersionU0(M::ISFImmersionManifold)
     return M.mlist[3]
 end
 
-function ImmersionWppoint(X)
+function ImmersionU0point(X)
     return X.parts[3]
+end
+
+function ImmersionWp(M::ISFImmersionManifold)
+    return M.mlist[4]
+end
+
+function ImmersionWppoint(X)
+    return X.parts[4]
 end
 
 @doc raw"""
@@ -110,63 +133,54 @@ function vector_transport_to(M::ISFImmersionManifold, p, X, q, method::AbstractV
     return vector_transport_to(M.M, p, X, q, method)
 end
 
-function Eval(Mimm::ISFImmersionManifold, Ximm, Misf::ISFPadeManifold, Xisf, MU, XU, data)
+function EvalUhat(Mimm::ISFImmersionManifold, Ximm, MU, XU, Misf::ISFPadeManifold, Xisf, data)
     dataPar = Eval(MU, XU, [Eval(PadeU(Misf), PadeUpoint(Xisf), data)] )
-    Uox = Eval(ImmersionWp(Mimm), ImmersionWppoint(Ximm), data) .- Eval(ImmersionW0(Mimm), ImmersionW0point(Ximm), [dataPar])
+    Uox = ImmersionU0point(Ximm) .+ Eval(ImmersionWp(Mimm), ImmersionWppoint(Ximm), data) .- Eval(ImmersionW0(Mimm), ImmersionW0point(Ximm), [dataPar])
     return Uox
 end
 
-function ISFImmersionLoss(M::ISFImmersionManifold{mdim, ndim, Worder, C, field}, X, dataIN, dataOUT, dataParIN, dataParOUT) where {mdim, ndim, Worder, C, field}
+function ISFImmersionLoss(M::ISFImmersionManifold{mdim, ndim, deficiency, Worder, C, field}, X, dataIN, dataOUT, dataParIN, dataParOUT) where {mdim, ndim, deficiency, Worder, C, field}
     datalen = size(dataIN,2)
     # U(x) = Wp.x - W0(z)
-    scale = AmplitudeScaling(dataIN)
+    scale = AmplitudeScaling(dataIN, M.Xstar)
 
-    Uox = Eval(ImmersionWp(M), ImmersionWppoint(X), [dataIN]) .- Eval(ImmersionW0(M), ImmersionW0point(X), [dataParIN])
-    Uoy = Eval(ImmersionWp(M), ImmersionWppoint(X), [dataOUT]) .- Eval(ImmersionW0(M), ImmersionW0point(X), [dataParOUT])
+    Uox = Eval(ImmersionU0(M), ImmersionU0point(X), [dataIN]) .+ Eval(ImmersionWp(M), ImmersionWppoint(X), [dataIN]) .- Eval(ImmersionW0(M), ImmersionW0point(X), [dataParIN])
+    Uoy = Eval(ImmersionU0(M), ImmersionU0point(X), [dataOUT])  .+ Eval(ImmersionWp(M), ImmersionWppoint(X), [dataOUT]) .- Eval(ImmersionW0(M), ImmersionW0point(X), [dataParOUT])
     UoxSq = sum(Uox .^ 2, dims=1)
-    L0 = Uoy .- ImmersionBpoint(X) * Uox
+    L0 = copy(Uoy)
+    L0[1:end-deficiency,:] .-= ImmersionBpoint(X)[1:end-deficiency,1:end-deficiency] * Uox[1:end-deficiency,:]
     return sum( (L0 .^ 2) .* exp.(C*UoxSq) ./ scale )/2/datalen
-    # OLD VERSION
-#     L0 = Uoy .- ImmersionBpoint(X) * Uox
-#     return sum( (L0 .^ 2) ./ scale )/2/datalen
 end
 
-function ISFImmersionGradient(M::ISFImmersionManifold{mdim, ndim, Worder, C, field}, X, dataIN, dataOUT, dataParIN, dataParOUT) where {mdim, ndim, Worder, C, field}
+function ISFImmersionGradient(M::ISFImmersionManifold{mdim, ndim, deficiency, Worder, C, field}, X, dataIN, dataOUT, dataParIN, dataParOUT) where {mdim, ndim, deficiency, Worder, C, field}
     datalen = size(dataIN,2)
     # U(x) = Wp.x - W0(z)
-    scale = AmplitudeScaling(dataIN)
+    scale = AmplitudeScaling(dataIN, M.Xstar)
 
-    Uox = Eval(ImmersionWp(M), ImmersionWppoint(X), [dataIN]) .- Eval(ImmersionW0(M), ImmersionW0point(X), [dataParIN])
-    Uoy = Eval(ImmersionWp(M), ImmersionWppoint(X), [dataOUT]) .- Eval(ImmersionW0(M), ImmersionW0point(X), [dataParOUT])
+    Uox = ImmersionU0point(X) .+ Eval(ImmersionWp(M), ImmersionWppoint(X), [dataIN]) .- Eval(ImmersionW0(M), ImmersionW0point(X), [dataParIN])
+    Uoy = ImmersionU0point(X) .+ Eval(ImmersionWp(M), ImmersionWppoint(X), [dataOUT]) .- Eval(ImmersionW0(M), ImmersionW0point(X), [dataParOUT])
     UoxSq = sum(Uox .^ 2, dims=1)
     # objfun = sum( (L0 .^ 2) .* exp.(C * UoxSq) ./ scale )/2/datalen
     L0 = Uoy .- ImmersionBpoint(X) * Uox
+    L0 = copy(Uoy)
+    L0[1:end-deficiency,:] .-= ImmersionBpoint(X)[1:end-deficiency,1:end-deficiency] * Uox[1:end-deficiency,:]
+    #
     L0deri1 = L0 .* exp.(C*UoxSq) ./ scale
     L0deri2 = C .* Uox .* sum(L0 .^ 2, dims=1) .* exp.(C*UoxSq) ./ scale
     # L0 otimes Uox
     DB = L0_DF(ImmersionB(M), ImmersionBpoint(X), nothing, Uox, -1.0*L0deri1, nothing)/datalen
+    DB[end+1-deficiency:end,:] .= 0
+    DB[:,end+1-deficiency:end] .= 0
     # 
-    DW0 = ( L0_DF(ImmersionW0(M), ImmersionW0point(X), nothing, dataParOUT, -L0deri1, nothing) .+
+    DW0 = ( L0_DF(ImmersionW0(M), ImmersionW0point(X), nothing, dataParOUT, -L0deri1, nothing) .+ 
             L0_DF(ImmersionW0(M), ImmersionW0point(X), nothing, dataParIN, transpose(ImmersionBpoint(X))*L0deri1 .- L0deri2, nothing) )/datalen
     #
 #     @show size(ImmersionWppoint(X)), size(dataOUT), size(L0)
     DWp = ( L0_DF(ImmersionWp(M), ImmersionWppoint(X), nothing, dataOUT, L0deri1, nothing) .+
             L0_DF(ImmersionWp(M), ImmersionWppoint(X), nothing, dataIN, -1.0*transpose(ImmersionBpoint(X))*L0deri1 .+ L0deri2, nothing) )/datalen
-    #
-    return ProductRepr(DB, DW0, DWp)
-    # OLD VERSION
-#     L0 = (Uoy .- ImmersionBpoint(X) * Uox) ./ scale
-#     # L0 otimes Uox
-#     DB = L0_DF(ImmersionB(M), ImmersionBpoint(X), nothing, Uox, -1.0*L0, nothing)/datalen
-#     # 
-#     DW0 = ( L0_DF(ImmersionW0(M), ImmersionW0point(X), nothing, dataParOUT, -L0, nothing) .+
-#             L0_DF(ImmersionW0(M), ImmersionW0point(X), nothing, dataParIN, transpose(ImmersionBpoint(X))*L0, nothing) )/datalen
-#     #
-# #     @show size(ImmersionWppoint(X)), size(dataOUT), size(L0)
-#     DWp = ( L0_DF(ImmersionWp(M), ImmersionWppoint(X), nothing, dataOUT, L0, nothing) .+
-#             L0_DF(ImmersionWp(M), ImmersionWppoint(X), nothing, dataIN, -1.0*transpose(ImmersionBpoint(X))*L0, nothing) )/datalen
-#     #
-#     return ProductRepr(DB, DW0, DWp)
+    DU0 = ( L0_DF(ImmersionU0(M), ImmersionU0point(X), nothing, dataOUT, L0deri1, nothing) .+
+            L0_DF(ImmersionU0(M), ImmersionU0point(X), nothing, dataIN, -1.0*transpose(ImmersionBpoint(X))*L0deri1 .+ L0deri2, nothing) )/datalen
+    return ProductRepr(DB, DW0, DU0, DWp)
 end
 
 function ISFImmersionRiemannianGradient(M::ISFImmersionManifold, X, dataIN, dataOUT, dataParIN, dataParOUT)
@@ -174,104 +188,24 @@ function ISFImmersionRiemannianGradient(M::ISFImmersionManifold, X, dataIN, data
     return project(M, X, gr)
 end
 
-# """
-#     ImmersionReconstruct(Mimm, Xres, Misf, Xisf, Uout)
-#     
-# Mimm : locally accurate foliation manifold
-# Xres : the data of locally accurate foliation manifold
-# Misf : the foliation
-# Xisf : the data of the foliation
-# Uout : the normal form transformation of the foliation
-# returns: a PolyModel that is the immersion of the invariant manifold
-# """
-# function ISFImmersionReconstruct(Mimm, Xres, Misf, Xisf, Uout)
-#     
-#     #---------------------------------------------------------
-#     #
-#     # Reconstructing the manifold immersion
-#     #
-#     #---------------------------------------------------------
-#     # Solving the equation
-#     #   U( W( z ) ) = z
-#     #   W^p W( z )  = W0( z )
-#     # which is
-#     #   W(z) = Wlin z + Wt(z)
-#     #   U(x) = Ulin x + Ut(x)
-#     # define
-#     #   Q = [Wp Ulin]^T
-#     #   DW(0) = Q^{-1} (0, I)^T
-#     # iterate
-#     #   Wt(z) = Q^{-1} [ W0(z), -Ut( Wlin z + Wt(z) ) ]^T
-#     # note: 'dout' is out for U, but 'in' for W
-#     
-#     # U = Uout o PadeU(Xisf)
-#     Ulin = PolyGetLinearPart(Uout)*PadeUpoint(Xisf).parts[1]'
-#     dout, din = size(Ulin)
-#     Q = zeros(din, din)
-#     Q[1:din-dout,:] .= ImmersionWppoint(Xres)'
-#     Q[1+din-dout:end,:] .= Ulin
-#     BI = zeros(din, dout)
-#     BI[1+din-dout:end,:] .= one(BI[1+din-dout:end,:])
-#     Wlin = Q\BI
-# 
-#     if minimum(abs.(eigvals(Q))) < 0.1
-#         println("Matrix Q is nearly singular, the two encoders U \\hat{U} do not define a good coordinate system")
-#     end
-# #     return
-#     Mi, Xi = toFullDensePolynomial(ImmersionW0(Mimm), ImmersionW0point(Xres))
-#     W0 = PolyModel(Mi.mexp, Xi)
-#     Wt = PolyModel(W0.mexp, zeros(din, size(W0.W,2)))
-#     order = PolyOrder(Wt)
-# #     @show W0.W
-# #     @show W0.mexp
-# #     return
-#     # We are solving the following
-#     # Uh(x) = Up x - W0(U(x))
-#     # Solve:
-#     # U ( W(z) ) = z
-#     # Up W(z) = W0(z)
-#     # Assuming U = Ulin + Unl, W = Wlin + Wnl
-#     # for the linear parts:
-#     # Ulin Wlin = I
-#     # Up Wlin = 0
-#     # Q = [Ulin; Up] -> Q Wlin = [I;0] -> Wlin = Q^-1 [I;0]
-#     # for the nonlinear terms
-#     # Q (Wnl(z) + [Unl( Wlin z + Wnl(z) ); 0]) = [0; W0(z)]
-#     # for some reason this blows up
-#     # iterate this
-#     Wtit = PolyModel(W0.mexp, zeros(din, size(W0.W,2)))
-#     Wtit.W[1:din-dout,:] .= W0.W
-#     # local function caputure stuff
-#     #----------
-#     for k=1:order+1
-#         Wt2 = PolyModel(order, dout, (z) -> Uout( Eval(PadeU(Misf), PadeUpoint(Xisf), [reshape(Wlin*z + Wt(z),:,1)]) ) - Ulin*(Wlin*z + Wt(z)))
-#         Wtit.W[1+din-dout:end,:] .= -Wt2.W
-#         Wt.W .= Q\Wtit.W
-# #         println("!!!NORM!!! = ", norm(Uout.W), " ", norm(W0.W), " ", norm(Wt2.W), " ", norm(Wt.W))
-#     end
-#     PolySetLinearPart!(Wt, Wlin)
-#     return Wt
-# end
-
-
 @doc raw"""
     MWt, XWt = ImmersionReconstruct(Mimm, Ximm, Misf, Xisf, MU, XU)
     
 Creates a manifold immersion from the locally accurate foliation represented by `Mimm, Ximm`, 
 the full foliation represented by `Misf, Xisf` and the normal form transformation `MU, XU`.
 """
-function ImmersionReconstruct(Mimm, Xres, Misf, Xisf, MU, XU)
+function ImmersionReconstruct(Mimm, Xres, Misf, Xisf, MU, XU; rank_deficiency = 0)
     #---------------------------------------------------------
     #
     # Reconstructing the manifold immersion
     #
     #---------------------------------------------------------
     # Solving the equation
-    #   U( W( z ) ) = z
-    #   W^p W( z )  = W0( z )
+    #   U( W( z ) )      = z
+    #   u0 + W^p W( z )  = W0( z )
     # which is
-    #   W(z) = Wlin z + Wt(z)
-    #   U(x) = Ulin x + Ut(x)
+    #   W(z) = Wc + Wlin z + Wt(z)
+    #   U(x) = Uc + Ulin x + Ut(x)
     # define
     #   Q = [Wp Ulin]^T
     #   DW(0) = Q^{-1} (0, I)^T
@@ -280,51 +214,35 @@ function ImmersionReconstruct(Mimm, Xres, Misf, Xisf, MU, XU)
     # note: 'dout' is out for U, but 'in' for W
     
     # U = Uout o PadeU(Xisf)
-    Ulin = getLinearPart(MU, XU)*PadeUpoint(Xisf).parts[1]'
+    Ulin = getLinearPart(MU, XU)*PadeUpoint(Xisf).parts[2]'
     dout, din = size(Ulin)
     Q = zeros(din, din)
     Q[1:din-dout,:] .= ImmersionWppoint(Xres)'
     Q[1+din-dout:end,:] .= Ulin
-    BI = zeros(din, dout)
-    BI[1+din-dout:end,:] .= one(BI[1+din-dout:end,:])
-    Wlin = Q\BI
 
+    function UNewt(Mimm, Xres, Misf, Xisf, MU, XU, MW, XW, z)
+        X = [ EvalUhat(Mimm, Xres, MU, XU, Misf, Xisf, [reshape(Eval(MW, XW, [z]),:,1)]);
+              Eval(MU, XU, [Eval(PadeU(Misf), PadeUpoint(Xisf), [reshape(Eval(MWt, XWt, [z]),:,1)])] ) - z]
+        return vec(X)
+    end
+
+    # checking for singularity
     if minimum(abs.(eigvals(Q))) < 0.1
         println("Matrix Q is nearly singular, the two encoders U \\hat{U} do not define a good coordinate system")
     end
-#     return
+
+    # Newton iteration
     MW0, XW0 = toFullDensePolynomial(ImmersionW0(Mimm), ImmersionW0point(Xres))
     order = max(PolyOrder(MU), PolyOrder(MW0)) # could be the sum of them, too!
+        
     MWt = DensePolyManifold(dout, din, order)
     XWt = zero(MWt)
-#     @show W0.W
-#     @show W0.mexp
-#     return
-    # We are solving the following
-    # Uh(x) = Up x - W0(U(x))
-    # Solve:
-    # U ( W(z) ) = z
-    # Up W(z) = W0(z)
-    # Assuming U = Ulin + Unl, W = Wlin + Wnl
-    # for the linear parts:
-    # Ulin Wlin = I
-    # Up Wlin = 0
-    # Q = [Ulin; Up] -> Q Wlin = [I;0] -> Wlin = Q^-1 [I;0]
-    # for the nonlinear terms
-    # Q (Wnl(z) + [Unl( Wlin z + Wnl(z) ); 0]) = [0; W0(z)]
-    # for some reason this blows up
-    # iterate this
-    XWtit = zero(MWt)
-    copySome!(MWt, XWtit, 1:din-dout, MW0, XW0) # copies to the first
-    # local function caputure stuff
-    #----------
-    for k=1:order+1
-        XWt2 = fromFunction(MU, (z) -> Eval(MU, XU, [Eval(PadeU(Misf), PadeUpoint(Xisf), [reshape(Wlin*z + Eval(MWt, XWt, [z]),:,1)])] ) - Ulin*(Wlin*z + Eval(MWt, XWt, [z])))
-        copySome!(MWt, XWtit, 1+din-dout:din, MU, -XWt2)
-        XWt .= Q\XWtit
-#         println("!!!NORM!!! = ", norm(Uout.W), " ", norm(W0.W), " ", norm(Wt2.W), " ", norm(Wt.W))
+    for k=1:2*order
+        XWt2 = XWt - Q \ fromFunction(MWt, (z) -> UNewt(Mimm, Xres, Misf, Xisf, MU, XU, MWt, XWt, z))
+        XWt .= XWt2
     end
-    setLinearPart!(MWt, XWt, Wlin)
+    println("Steady state = ", Eval(MWt, XWt, [zeros(dout)]))
+    
     return MWt, XWt
 end
 
@@ -336,7 +254,7 @@ Solves the optimisation problem
 \arg\min_{\boldsymbol{S},\boldsymbol{U}}\sum_{k=1}^{N}\left\Vert \boldsymbol{x}_{k}\right\Vert ^{-2}\exp\left(-\frac{1}{2\kappa^{2}}\left\Vert \hat{\boldsymbol{U}}\left(\boldsymbol{x}_{k}\right)\right\Vert ^{2}\right)\left\Vert \boldsymbol{B}\hat{\boldsymbol{U}}\left(\boldsymbol{x}_{k}\right)-\hat{\boldsymbol{U}}\left(\boldsymbol{y}_{k}\right)\right\Vert ^{2}
 ```
 """
-function ISFImmersionSolve!(Mimm, Ximm, Misf, Xisf, MU, XU, Wperp, Sperp, dataIN, dataOUT; maxit = 25)
+function ISFImmersionSolve!(Mimm, Ximm, Misf, Xisf, MU, XU, S2, U2, dataIN, dataOUT; maxit = 25, rank_deficiency = 0, Tstep = 1.0)
     #---------------------------------------------------------
     #
     # Fitting a manifold as an immersion
@@ -347,15 +265,49 @@ function ISFImmersionSolve!(Mimm, Ximm, Misf, Xisf, MU, XU, Wperp, Sperp, dataIN
     
     dataParIN = Eval(MU, XU, [Eval(PadeU(Misf), PadeUpoint(Xisf), [dataIN])] )
     dataParOUT = Eval(MU, XU, [Eval(PadeU(Misf), PadeUpoint(Xisf), [dataOUT])] )
+
+    # To initialise:
+    #   Assume that 
+    #       - A is the full linear dynamics
+    #       - Vs . A = C . Vs represents the dynamics transversal to the manifold
+    # In case C has no (nearly) zero singular value, set
+    #   B  = C
+    #   Up = Vs
+    # In case C has singular values, that is C = Cu . Cs . Cv^T, set
+    #   B  = (Cu^T . Cv)^{-1} . Cs
+    #   Up = Bv^T . Vs
+
+    # calculate the invariant subspace corresponding to the largest (in magnitude) eigenvalues
+    F0 = schur(S2)
+    p = sortperm(abs.(F0.values), order=Base.Order.Reverse)
+    sel = zeros(Bool, length(p))
+    sel[p[1:end-rank_deficiency]] .= true
+    F = ordschur(F0,sel)
+    # debug display
+    if rank_deficiency > 0
+        println("Min included modulus ", minimum(abs.(F.values[1:end-rank_deficiency])))
+        println("Max excluded modulus ", maximum(abs.(F.values[end-rank_deficiency+1:end])))
+    end
+    println("Included frequencies [Hz] = ", sort(unique(abs.(angle.(F.values[1:end-rank_deficiency])/(2*pi))))/Tstep)
+    println("Included frequencies [rad/s] = ", sort(unique(abs.(angle.(F.values[1:end-rank_deficiency]))))/Tstep)
+
+    Sperp = F.T
+    Sperp[end+1-rank_deficiency:end,:] .= 0
+    Sperp[:,end+1-rank_deficiency:end] .= 0
+    Wperp = F.Z' * U2
     
     # setting up the linear part
+    @show size(ImmersionWppoint(Ximm)), size(U2)
     ImmersionBpoint(Ximm) .= Sperp
     ImmersionWppoint(Ximm) .= Wperp'
+    ImmersionW0point(Ximm) .= 0.0
     
     # checking if problem is well defined
+    Ulin = getLinearPart(MU, XU)*PadeUpoint(Xisf).parts[2]'
+    dout, din = size(Ulin)
     Q = zeros(din, din)
-    Q[1:din-dout,:] .= Wperp
-    Q[1+din-dout:end,:] .= PadeUpoint(Xisf).parts[1]'
+    Q[1:din-dout,:] .= ImmersionWppoint(Ximm)'
+    Q[1+din-dout:end,:] .= Ulin
     if minimum(abs.(eigvals(Q))) < 0.1
         println("Matrix Q is nearly singular, the two encoders U \\hat{U} do not define a good coordinate system")
     end
@@ -368,7 +320,7 @@ function ISFImmersionSolve!(Mimm, Ximm, Misf, Xisf, MU, XU, Wperp, Sperp, dataIN
             Mimm,
             Ximm,
             (M, x) -> ISFImmersionRiemannianGradient(M, x, dataIN, dataOUT, dataParIN, dataParOUT);
-            steplength=2^(-8),
+            steplength=2^(-22),
             retraction_method=Mimm.R,
             vector_transport_method=Mimm.VT,
         ),
@@ -403,7 +355,7 @@ function testImmersion()
     dataParIN = randn(mdim, samples)
     dataParOUT = randn(mdim, samples)
     
-    M = ISFImmersionManifold(mdim, ndim, order, 1.0)
+    M = ISFImmersionManifold(mdim, ndim, order, 1.0; X = randn(ndim))
     X = randn(M)
 #     ImmersionWppoint(X) .= Wperp
 #     ImmersionBpoint(X) .= 0
@@ -430,6 +382,13 @@ function testImmersion()
                                         - ISFImmersionLoss(M, X, dataIN, dataOUT, dataParIN, dataParOUT))/eps
         ImmersionW0point(Xp)[k] = ImmersionW0point(X)[k]
         @show ImmersionW0point(grad)[k], ImmersionW0point(gradp)[k] - ImmersionW0point(grad)[k]
+    end
+    for k=1:length(ImmersionU0point(X))
+        ImmersionU0point(Xp)[k] += eps
+        ImmersionU0point(gradp)[k] = (ISFImmersionLoss(M, Xp, dataIN, dataOUT, dataParIN, dataParOUT) 
+                                        - ISFImmersionLoss(M, X, dataIN, dataOUT, dataParIN, dataParOUT))/eps
+        ImmersionU0point(Xp)[k] = ImmersionU0point(X)[k]
+        @show ImmersionU0point(grad)[k], ImmersionU0point(gradp)[k] - ImmersionU0point(grad)[k]
     end
     for k=1:length(ImmersionWppoint(X))
         ImmersionWppoint(Xp)[k] += eps
