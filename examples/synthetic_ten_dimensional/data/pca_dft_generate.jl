@@ -73,31 +73,28 @@ module s
     amps = [0.8 1.0 1.2 1.4]
     PCAdim = 16
     for k=1:length(amps)
-#         zs, TstepZS = generate(amps[k])
-        @load "sys10dimTrainPCA-10-$(k).bson" zs TstepZS
+        zs, TstepZS = generate(amps[k])
         xst, yst, Tstep, embedscales = PCAEmbed(zs, TstepZS, PCAdim, freqs)
         xs, ys = dataPrune(xst, yst; nbox=20, curve=1, perbox=1000, scale = 1.0, measure = nothing)
         @save "sys10dimTrainPCA-$(PCAdim)-$(k).bson" xs ys Tstep zs TstepZS embedscales
-#         xst, yst, Tstep, embedscales = frequencyEmbed(zs, TstepZS, freqs)
-#         xs, ys = dataPrune(xst, yst; nbox=20, curve=1, perbox=1000, scale = 1.0, measure = nothing)
-#         @save "sys10dimTrainDFT-$(k).bson" xs ys Tstep zs TstepZS embedscales
+        xst, yst, Tstep, embedscales = frequencyEmbed(zs, TstepZS, freqs)
+        xs, ys = dataPrune(xst, yst; nbox=20, curve=1, perbox=1000, scale = 1.0, measure = nothing)
+        @save "sys10dimTrainDFT-$(k).bson" xs ys Tstep zs TstepZS embedscales
         
+        zs, TstepZS = generate(amps[k])
+#         @load "sys10dimTrainPCA-10-$(k).bson" zs TstepZS
+        xst, yst, Tstep, embedscales = PCAEmbed(zs, TstepZS, PCAdim, freqs)
+        xs, ys = dataPrune(xst, yst; nbox=20, curve=1, perbox=1000, scale = 1.0, measure = nothing)
+        @save "sys10dimTestPCA-$(PCAdim)-$(k).bson" xs ys Tstep zs TstepZS embedscales
+        xst, yst, Tstep, embedscales = frequencyEmbed(zs, TstepZS, freqs)
+        xs, ys = dataPrune(xst, yst; nbox=20, curve=1, perbox=1000, scale = 1.0, measure = nothing)
+        @save "sys10dimTestDFT-$(k).bson" xs ys Tstep zs TstepZS embedscales
+
         # frequencies
         scale = sqrt.(sum(xs.^2,dims=1))
         A = ((ys.*scale)*transpose(xs)) * inv((xs.*scale)*transpose(xs))
         println("frequencies [Hz] = ", sort(unique(abs.(angle.(eigvals(A))/(2*pi))))/Tstep)
         println("frequencies [rad/s] = ", sort(unique(abs.(angle.(eigvals(A)))))/Tstep)
-
-        @show size(xs)
-        
-#         zs, TstepZS = generate(amps[k])
-# #        @load "sys10dimZSTestPCA-RED-$(k).bson" zs TstepZS
-#         xst, yst, Tstep, embedscales = PCAEmbed(zs, TstepZS, PCAdim, freqs)
-#         xs, ys = dataPrune(xst, yst; nbox=20, curve=1, perbox=1000, scale = 1.0, measure = nothing)
-#         @save "sys10dimTestPCA-$(PCAdim)-$(k).bson" xs ys Tstep zs TstepZS embedscales
-#         xst, yst, Tstep, embedscales = frequencyEmbed(zs, TstepZS, freqs)
-#         xs, ys = dataPrune(xst, yst; nbox=20, curve=1, perbox=1000, scale = 1.0, measure = nothing)
-#         @save "sys10dimTestDFT-$(k).bson" xs ys Tstep zs TstepZS embedscales
     end
     
 end

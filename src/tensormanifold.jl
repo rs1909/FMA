@@ -199,8 +199,8 @@ function HTTensor(dims::Array{T,1}, topdim::T = 1, B=nothing, tree_type = :balan
     children, dim2ind = define_tree(length(dims), tree_type)
     nodes = nr_nodes(children)
     # create ranks at each node
-    # setting the ration to 0.6
     ranks = cascade_ranks(children, dim2ind, topdim, dims, B, node_ratio = 1.0, leaf_ratio = min(1.0, node_rank/minimum(dims)), max_rank = 18)
+    @show ranks
     return TensorManifold(dims, topdim, ranks, children, dim2ind, B, tree_type)
 end
     

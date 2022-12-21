@@ -104,16 +104,16 @@ for it in [("0_0Nm",:red) ("1_0Nm",:blue) ("2_1Nm",:green) ("3_1Nm",:black)]
     end
 end
 
-@load "FigureData-Beam-PCA-CAS4-0_0Nm.bson" bb
+@load "FigureData-Beam-PCA-CAS4-tst-0_0Nm.bson" bb
 id1 = findfirst(bb[3] .> 0.1)
 bb1 = bb
-@load "FigureData-Beam-PCA-CAS4-1_0Nm.bson" bb
+@load "FigureData-Beam-PCA-CAS4-tst-1_0Nm.bson" bb
 id2 = findfirst(bb[3] .> 0.1)
 bb2 = bb
-@load "FigureData-Beam-PCA-CAS4-2_1Nm.bson" bb
+@load "FigureData-Beam-PCA-CAS4-tst-2_1Nm.bson" bb
 id3 = findfirst(bb[3] .> 0.1)
 bb3 = bb
-@load "FigureData-Beam-PCA-CAS4-3_1Nm.bson" bb
+@load "FigureData-Beam-PCA-CAS4-tst-3_1Nm.bson" bb
 id4 = findfirst(bb[3] .> 0.1)
 bb4 = bb
 
@@ -127,8 +127,8 @@ d4 = pdf(kde(vec(bb4[9]),bandwidth=0.003), ddr)
 # the scaling factor between forces and accelerations
 sfac =  442.75
 
-pl1 = plot([d1+d1[end:-1:1] d2+d2[end:-1:1] d3+d3[end:-1:1] d4+d4[end:-1:1]],[ddr ddr ddr ddr],
-           linestyle=[:solid :dash :dot :dashdot], linecolor=[:red :blue :darkgreen :black], direction=:h, ylims=[0,0.1],xlims=[0,40],leg=false,xlabel="density",ylabel="amplitude",title="(a)")
+pl1 = plot([d1+d1[end:-1:1] d2+d2[end:-1:1] d3+d3[end:-1:1] d4+d4[end:-1:1]], [ddr ddr ddr ddr], 
+           linestyle=[:solid :dash :dot :dashdot], linecolor=[:red :blue :darkgreen :black], ylims=[0,0.1],xlims=[0,40],leg=false,xlabel="density",ylabel="amplitude",title="(a)")
 pl2 = plot(plFreq, [bb1[1][2:id1]/2/pi, bb2[1][2:id2]/2/pi, bb3[1][2:id3]/2/pi, bb4[1][2:id4]/2/pi, vec(tab1[1,:]), vec(tab2[1,:]), vec(tab3[1,:]), vec(tab4[1,:])],
            [bb1[3][2:id1], bb2[3][2:id2], bb3[3][2:id3], bb4[3][2:id4], vec(tab1[2,:])/sfac, vec(tab2[2,:])/sfac, vec(tab3[2,:])/sfac, vec(tab4[2,:])/sfac], 
            xticks = [ 60.1, 60.4, 60.7, 61 ], linestyle=[:solid :dash :dot :dashdot :dot :dot :dot :dot], linecolor=[:red :blue :darkgreen :black :white :white :white :white], markershape =[:none :none :none :none :circle :cross :rect :dtriangle], markercolor=[:red :blue :darkgreen :black :red :blue :darkgreen :black], markerstrokecolor=:match, markersize=2, leg=false,xlims=[60.0,61.0],ylims=[0,0.1],xlabel="frequency [Hz]", yticks=[], title="(b)")
@@ -140,18 +140,18 @@ pl3 = plot(plDamp, [bb1[2][2:id1], bb2[2][2:id2], bb3[2][2:id3], bb4[2][2:id4], 
 #          linestyle=[:solid :dash :dot :dashdot :dot :dot :dot :dot],linecolor=[:red :blue :darkgreen :black :white :white :white :white], markershape =[:none :none :none :none :circle :cross :rect :dtriangle], markercolor=[:red :blue :darkgreen :black :red :blue :darkgreen :black], markerstrokecolor=:match, markersize=2,
 #          leg=false,xlims=[60.0,61.0],ylims=[0,0.1],xlabel="frequency [Hz]", ylabel="amplitude", title="(b)")
 pl = plot(pl1, pl2, pl3, layout = @layout([a{0.25w} b{0.35w} c{0.4w}]), size=(900,div(900,3)),margin=5mm, left_margin=5mm, bottom_margin=5mm, fontsize=14, tickfontsize=14, legend_font_pointsize=14, labelfontsize=14, titlefontsize=14)
-savefig(pl, "JointedBeam-PCA-CAS4.pdf")
+savefig(pl, "JointedBeam-PCA-CAS4-tst.pdf")
 
-@load "FigureData-Beam-DFT-CAS4-0_0Nm.bson" bb
+@load "FigureData-Beam-DFT-CAS4-tst-0_0Nm.bson" bb
 id1 = findfirst(bb[3] .> 0.1)
 bb1 = bb
-@load "FigureData-Beam-DFT-CAS4-1_0Nm.bson" bb
+@load "FigureData-Beam-DFT-CAS4-tst-1_0Nm.bson" bb
 id2 = findfirst(bb[3] .> 0.1)
 bb2 = bb
-@load "FigureData-Beam-DFT-CAS4-2_1Nm.bson" bb
+@load "FigureData-Beam-DFT-CAS4-tst-2_1Nm.bson" bb
 id3 = findfirst(bb[3] .> 0.1)
 bb3 = bb
-@load "FigureData-Beam-DFT-CAS4-3_1Nm.bson" bb
+@load "FigureData-Beam-DFT-CAS4-tst-3_1Nm.bson" bb
 id4 = findfirst(bb[3] .> 0.1)
 bb4 = bb
 
@@ -165,8 +165,8 @@ d4 = pdf(kde(vec(bb4[9]),bandwidth=0.003), ddr)
 # the scaling factor between forces and accelerations
 sfac =  442.75
 
-pl1 = plot([d1+d1[end:-1:1] d2+d2[end:-1:1] d3+d3[end:-1:1] d4+d4[end:-1:1]],[ddr ddr ddr ddr],
-           linestyle=[:solid :dash :dot :dashdot], linecolor=[:red :blue :darkgreen :black], direction=:h, ylims=[0,0.1],xlims=[0,40],leg=false,xlabel="density",ylabel="amplitude",title="(a)")
+pl1 = plot([d1+d1[end:-1:1] d2+d2[end:-1:1] d3+d3[end:-1:1] d4+d4[end:-1:1]], [ddr ddr ddr ddr], 
+           linestyle=[:solid :dash :dot :dashdot], linecolor=[:red :blue :darkgreen :black], ylims=[0,0.1],xlims=[0,40],leg=false,xlabel="density",ylabel="amplitude",title="(a)")
 pl2 = plot(plFreq, [bb1[1][2:id1]/2/pi, bb2[1][2:id2]/2/pi, bb3[1][2:id3]/2/pi, bb4[1][2:id4]/2/pi, vec(tab1[1,:]), vec(tab2[1,:]), vec(tab3[1,:]), vec(tab4[1,:])],
            [bb1[3][2:id1], bb2[3][2:id2], bb3[3][2:id3], bb4[3][2:id4], vec(tab1[2,:])/sfac, vec(tab2[2,:])/sfac, vec(tab3[2,:])/sfac, vec(tab4[2,:])/sfac], 
            xticks = [ 60.1, 60.4, 60.7, 61 ], linestyle=[:solid :dash :dot :dashdot :dot :dot :dot :dot], linecolor=[:red :blue :darkgreen :black :white :white :white :white], markershape =[:none :none :none :none :circle :cross :rect :dtriangle], markercolor=[:red :blue :darkgreen :black :red :blue :darkgreen :black], markerstrokecolor=:match, markersize=2, leg=false,xlims=[60.0,61.0],ylims=[0,0.1],xlabel="frequency [Hz]", yticks=[], title="(b)")
@@ -178,4 +178,4 @@ pl3 = plot(plDamp, [bb1[2][2:id1], bb2[2][2:id2], bb3[2][2:id3], bb4[2][2:id4], 
 #          linestyle=[:solid :dash :dot :dashdot :dot :dot :dot :dot],linecolor=[:red :blue :darkgreen :black :white :white :white :white], markershape =[:none :none :none :none :circle :cross :rect :dtriangle], markercolor=[:red :blue :darkgreen :black :red :blue :darkgreen :black], markerstrokecolor=:match, markersize=2,
 #          leg=false,xlims=[60.0,61.0],ylims=[0,0.1],xlabel="frequency [Hz]", ylabel="amplitude", title="(b)")
 pl = plot(pl1, pl2, pl3, layout = @layout([a{0.25w} b{0.35w} c{0.4w}]), size=(900,div(900,3)),margin=5mm, left_margin=5mm, bottom_margin=5mm, fontsize=14, tickfontsize=14, legend_font_pointsize=14, labelfontsize=14, titlefontsize=14)
-savefig(pl, "JointedBeam-DFT-CAS4.pdf")
+savefig(pl, "JointedBeam-DFT-CAS4-tst.pdf")

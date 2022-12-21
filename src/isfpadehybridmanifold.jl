@@ -287,7 +287,7 @@ end
 function ISFPadeLossInfinity(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, field}, X, dataIN, dataOUT) where {mdim, ndim, Porder, Qorder, Uorder, field}
     datalen = size(dataIN,2)
 
-    scale = AmplitudeScaling(dataIN, M.Xstar)
+    scale = (0.1^2 .+ sum((dataIN .- reshape(M.Xstar,:,1)) .^ 2, dims = 1))
 
     Uoy = Eval(PadeU(M), PadeUpoint(X), [dataOUT])
     Uox = Eval(PadeU(M), PadeUpoint(X), [dataIN])
@@ -295,7 +295,22 @@ function ISFPadeLossInfinity(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uord
     PoUox = Eval(PadeP(M), PadePpoint(X), [Uox])
     L0 = QoUoy .- PoUox
     
-    return maximum(abs.( L0 ))
+    return maximum(sqrt.( sum(L0 .^ 2,dims=1) ./ sum(Uox .^ 2,dims=1) )), sum(sqrt.( sum(L0 .^ 2,dims=1) ./ sum(Uox .^ 2,dims=1) ))/datalen, sum( (L0 .^ 2) ./ scale )/datalen
+#      sum( (L0 .^ 2) ./ scale )/datalen
+end
+
+function ISFPadeLossHistogram(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, field}, X, dataIN, dataOUT) where {mdim, ndim, Porder, Qorder, Uorder, field}
+    datalen = size(dataIN,2)
+
+    scale = (0.1^2 .+ sum((dataIN .- reshape(M.Xstar,:,1)) .^ 2, dims = 1))
+
+    Uoy = Eval(PadeU(M), PadeUpoint(X), [dataOUT])
+    Uox = Eval(PadeU(M), PadeUpoint(X), [dataIN])
+    QoUoy = Eval(PadeQ(M), PadeQpoint(X), [Uoy])
+    PoUox = Eval(PadeP(M), PadePpoint(X), [Uox])
+    L0 = QoUoy .- PoUox
+    
+    return vec(sum(Uox .^ 2,dims=1)), vec(sqrt.( sum(L0 .^ 2,dims=1) ./ sum(Uox .^ 2,dims=1) ))
 end
 
 function ISFPadeGradientP(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, field}, X, dataIN, dataOUT; DV=makeCache(M, X, dataIN, dataOUT)) where {mdim, ndim, Porder, Qorder, Uorder, field}
@@ -1141,15 +1156,15 @@ The method is block coordinate descent, where we optimise for matrix coefficient
 """
 function GaussSouthwellOptim(Misf, Xisf, dataIN, dataOUT, scale, Tstep, nearest; name = "", maxit=8000, gradstop = 1e-10)
     Cache = makeCache(Misf, Xisf, dataIN, dataOUT)
-    loss = ISFPadeLoss(Misf, Xisf, dataIN, dataOUT)
-    println("Initial L=", loss)
-    UPD_GRAD = 3
+#     loss = ISFPadeLoss(Misf, Xisf, dataIN, dataOUT)
+#     println("Initial L=", loss)
+    UPD_GRAD = 2 + length(PadeUpoint(Xisf).parts) 
     radius = 0.5
     radius_max = 10.0
     updateCache!(Cache, Misf, Xisf, dataIN, dataOUT)
     grall = ISFPadeRiemannianGradient(Misf, Xisf, dataIN, dataOUT; DV=Cache)
     grall .= project(Misf, Xisf, grall)
-    loss_table = ones(2*UPD_GRAD+1)
+    loss_table = []
     id = (1,0,0)
     for it=1:maxit
         if mod(it,UPD_GRAD) == 0
@@ -1157,12 +1172,14 @@ function GaussSouthwellOptim(Misf, Xisf, dataIN, dataOUT, scale, Tstep, nearest;
             grall .= ISFPadeRiemannianGradient(Misf, Xisf, dataIN, dataOUT; DV=Cache)
             grall .= project(Misf, Xisf, grall)
         end
-#         mx, id = MaximumNorm(grall)
-        mx = 1.0
-        id = NextMaximumNorm(grall, id)
+        mx, id = MaximumNorm(grall)
+#         id = NextMaximumNorm(grall, id)
         if mx < gradstop
             println("reached gradient below threshold. ", mx)
             break
+        end
+        if mod(it, UPD_GRAD) == UPD_GRAD-1
+            id = (1,0,0)
         end
         if id[1] == 1
             # P
@@ -1284,13 +1301,14 @@ function GaussSouthwellOptim(Misf, Xisf, dataIN, dataOUT, scale, Tstep, nearest;
             end
         end
         infloss = ISFPadeLossInfinity(Misf, Xisf, dataIN, dataOUT)
-        println(" Linf=", @sprintf("%.6e", infloss), " mx ", mx)
-        @save "ISFdata-$(name).bson" Misf Xisf Tstep scale it grall
-        loss_table[1+mod(it,length(loss_table))] = infloss
-        if maximum(abs.(loss_table .- loss_table[1])) <= eps(loss_table[1])
-            println("Loss did not change, quitting")
-            break
-        end
+        println(" mx=", @sprintf("%.4e", mx), " E_max=", @sprintf("%.4e", infloss[1]), " E_avg=", @sprintf("%.4e", infloss[2]))
+        push!(loss_table, (time=time(), E_max = infloss[1], E_avg = infloss[2], loss = infloss[3]))
+        @save "ISFdata-$(name).bson" Misf Xisf Tstep scale it grall loss_table
+#         loss_table[1+mod(it,length(loss_table))] = infloss[1]
+#         if maximum(abs.(loss_table .- loss_table[1])) <= eps(loss_table[1])
+#             println("Loss did not change, quitting")
+#             break
+#         end
     end
     return Misf, Xisf
 end

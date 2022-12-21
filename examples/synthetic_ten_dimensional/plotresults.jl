@@ -44,76 +44,75 @@ bbvf = executeVF()
 push!(PGFPlotsX.CUSTOM_PREAMBLE,raw"\usepackage{amsmath,bm,luatex85}")
 pgfplotsx()
 
-@load "FigureData-10dim-FULL-CAS4-1.bson" bb
+@load "FigureData-10dim-FULL-CAS4-1-tst.bson" bb
 id1 = findfirst(bb[3] .> 0.07)
 bbr1 = bb
-@load "FigureData-10dim-FULL-CAS4-2.bson" bb
+@load "FigureData-10dim-FULL-CAS4-2-tst.bson" bb
 id2 = findfirst(bb[3] .> 0.07)
 bbr2 = bb
-@load "FigureData-10dim-FULL-CAS4-3.bson" bb
+@load "FigureData-10dim-FULL-CAS4-3-tst.bson" bb
 id3 = findfirst(bb[3] .> 0.07)
 bbr3 = bb
-@load "FigureData-10dim-FULL-CAS4-4.bson" bb
+@load "FigureData-10dim-FULL-CAS4-4-tst.bson" bb
 id4 = findfirst(bb[3] .> 0.07)
 bbr4 = bb
 idvf = findfirst(bbvf[3] .> 0.07)
 
 pl = plot(
-    density([vec(bbr1[9]), vec(bbr2[9]), vec(bbr3[9]), vec(bbr4[9])],linestyle=[:solid :dash :dot :dashdot],linecolor=[:red :blue :darkgreen :purple :black],orientation=:h, ylims=[0,0.07],xlims=[0,40],leg=false,xlabel="density",ylabel="amplitude",title="(a)"),
+    density([vec(bbr1[9]), vec(bbr2[9]), vec(bbr3[9]), vec(bbr4[9])],linestyle=[:solid :dash :dot :dashdot],linecolor=[:red :blue :darkgreen :purple :black],permute=(:y,:x), xlims=[0,0.07],ylims=[0,30],leg=false,ylabel="density",xlabel="amplitude",title="(a)"),
      plot([bbr1[1][2:id1], bbr2[1][2:id2], bbr3[1][2:id3], bbr4[1][2:id4], bbvf[1][2:idvf]],
           [bbr1[3][2:id1], bbr2[3][2:id2], bbr3[3][2:id3], bbr4[3][2:id4], bbvf[3][2:idvf]], linestyle=[:solid :dash :dot :dashdot],linecolor=[:red :blue :darkgreen :purple :black],leg=false,xlims=[0.95,1.06],ylims=[0,0.07],xlabel="frequency [rad/s]", ylabel="amplitude", title="(b)", xticks = [ 0.95, 1.0, 1.05 ]),
      plot([bbr1[2][2:id1], bbr2[2][2:id2], bbr3[2][2:id3], bbr4[2][2:id4], bbvf[2][2:idvf]],
           [bbr1[3][2:id1], bbr2[3][2:id2], bbr3[3][2:id3], bbr4[3][2:id4], bbvf[3][2:idvf]], linestyle=[:solid :dash :dot :dashdot],linecolor=[:red :blue :darkgreen :purple :black],label=["ST-1" "ST-2" "ST-3" "ST-4" "VF"], legend_position=:bottomright, xlims=[0.001,0.1],ylims=[0,0.07],xlabel="damping ratio [-]", ylabel="amplitude", xscale=:log10, title="(c)"),
      layout = @layout([a{0.3w} b{0.35w} c{0.35w}]), size=(900,div(900,3)),margin=5mm, left_margin=5mm, bottom_margin=5mm, fontsize=14, tickfontsize=14, legend_font_pointsize=14, labelfontsize=14, titlefontsize=14)
-savefig(pl, "FullState.pdf")
+savefig(pl, "FullState-tst.pdf")
 
 
-@load "FigureData-10dim-PCA-CAS4-16-1.bson" bb # very high order U
+@load "FigureData-10dim-PCA-CAS4-16-1-tst.bson" bb # very high order U
 id1 = findfirst(bb[3] .> 0.07)
 bbr1 = bb
-@load "FigureData-10dim-PCA-CAS4-16-2.bson" bb
+@load "FigureData-10dim-PCA-CAS4-16-2-tst.bson" bb
 id2 = findfirst(bb[3] .> 0.07)
 bbr2 = bb
-@load "FigureData-10dim-PCA-CAS4-16-3.bson" bb
+@load "FigureData-10dim-PCA-CAS4-16-3-tst.bson" bb
 id3 = findfirst(bb[3] .> 0.07)
 bbr3 = bb
-@load "FigureData-10dim-PCA-CAS4-16-4.bson" bb
+@load "FigureData-10dim-PCA-CAS4-16-4-tst.bson" bb
 id4 = findfirst(bb[3] .> 0.07)
 bbr4 = bb
 idvf = findfirst(bbvf[3] .> 0.07)
 
 pl = plot(
-    density([vec(bbr1[9]), vec(bbr2[9]), vec(bbr3[9]), vec(bbr4[9])],linestyle=[:solid :dash :dot :dashdot],linecolor=[:red :blue :darkgreen :purple :black],orientation=:h, ylims=[0,0.07],xlims=[0,40],leg=false,xlabel="density",ylabel="amplitude",title="(d)"),
+    density([vec(bbr1[9]), vec(bbr2[9]), vec(bbr3[9]), vec(bbr4[9])],linestyle=[:solid :dash :dot :dashdot],linecolor=[:red :blue :darkgreen :purple :black],permute=(:y,:x), xlims=[0,0.07],ylims=[0,30],leg=false,ylabel="density",xlabel="amplitude",title="(d)"),
      plot([bbr1[1][2:id1], bbr2[1][2:id2], bbr3[1][2:id3], bbr4[1][2:id4], bbvf[1][2:idvf]],
           [bbr1[3][2:id1], bbr2[3][2:id2], bbr3[3][2:id3], bbr4[3][2:id4], bbvf[3][2:idvf]], linestyle=[:solid :dash :dot :dashdot],linecolor=[:red :blue :darkgreen :purple :black],leg=false,xlims=[0.95,1.06],ylims=[0,0.07],xlabel="frequency [rad/s]", ylabel="amplitude", title="(e)", xticks = [ 0.95, 1.0, 1.05 ]),
      plot([bbr1[2][2:id1], bbr2[2][2:id2], bbr3[2][2:id3], bbr4[2][2:id4], bbvf[2][2:idvf]],
           [bbr1[3][2:id1], bbr2[3][2:id2], bbr3[3][2:id3], bbr4[3][2:id4], bbvf[3][2:idvf]], linestyle=[:solid :dash :dot :dashdot],linecolor=[:red :blue :darkgreen :purple :black],label=["PCA-1" "PCA-2" "PCA-3" "PCA-4" "VF"], legend_position=:bottomright, xlims=[0.001,0.1],ylims=[0,0.07],xlabel="damping ratio [-]", ylabel="amplitude", xscale=:log10, title="(f)"),
      layout = @layout([a{0.3w} b{0.35w} c{0.35w}]), size=(900,div(900,3)),margin=5mm, left_margin=5mm, bottom_margin=5mm, fontsize=14, tickfontsize=14, legend_font_pointsize=14, labelfontsize=14, titlefontsize=14)
-savefig(pl, "PCAState.pdf")
+savefig(pl, "PCAState-tst.pdf")
 
-    
-@load "FigureData-10dim-DFT-CAS4-1.bson" bb
+@load "FigureData-10dim-DFT-CAS4-1-tst.bson" bb
 id1 = findfirst(bb[3] .> 0.07)
 bbr1 = bb
-@load "FigureData-10dim-DFT-CAS4-2.bson" bb
+@load "FigureData-10dim-DFT-CAS4-2-tst.bson" bb
 id2 = findfirst(bb[3] .> 0.07)
 bbr2 = bb
-@load "FigureData-10dim-DFT-CAS4-3.bson" bb
+@load "FigureData-10dim-DFT-CAS4-3-tst.bson" bb
 id3 = findfirst(bb[3] .> 0.07)
 bbr3 = bb
-@load "FigureData-10dim-DFT-CAS4-4.bson" bb
+@load "FigureData-10dim-DFT-CAS4-4-tst.bson" bb
 id4 = findfirst(bb[3] .> 0.07)
 bbr4 = bb
 idvf = findfirst(bbvf[3] .> 0.07)
 
 pl = plot(
-    density([vec(bbr1[9]), vec(bbr2[9]), vec(bbr3[9]), vec(bbr4[9])],linestyle=[:solid :dash :dot :dashdot],linecolor=[:red :blue :darkgreen :purple :black],orientation=:h, ylims=[0,0.07],xlims=[0,40],leg=false,xlabel="density",ylabel="amplitude",title="(g)"),
+    density([vec(bbr1[9]), vec(bbr2[9]), vec(bbr3[9]), vec(bbr4[9])],linestyle=[:solid :dash :dot :dashdot],linecolor=[:red :blue :darkgreen :purple :black],permute=(:y,:x), xlims=[0,0.07],ylims=[0,30],leg=false,ylabel="density",xlabel="amplitude",title="(g)"),
      plot([bbr1[1][2:id1], bbr2[1][2:id2], bbr3[1][2:id3], bbr4[1][2:id4], bbvf[1][2:idvf]],
           [bbr1[3][2:id1], bbr2[3][2:id2], bbr3[3][2:id3], bbr4[3][2:id4], bbvf[3][2:idvf]], linestyle=[:solid :dash :dot :dashdot],linecolor=[:red :blue :darkgreen :purple :black],leg=false,xlims=[0.95,1.06],ylims=[0,0.07],xlabel="frequency [rad/s]", ylabel="amplitude", title="(h)", xticks = [ 0.95, 1.0, 1.05 ]),
      plot([bbr1[2][2:id1], bbr2[2][2:id2], bbr3[2][2:id3], bbr4[2][2:id4], bbvf[2][2:idvf]],
           [bbr1[3][2:id1], bbr2[3][2:id2], bbr3[3][2:id3], bbr4[3][2:id4], bbvf[3][2:idvf]], linestyle=[:solid :dash :dot :dashdot],linecolor=[:red :blue :darkgreen :purple :black],label=["DFT-1" "DFT-2" "DFT-3" "DFT-4" "VF"], legend_position=:bottomright, xlims=[0.001,0.1],ylims=[0,0.07],xlabel="damping ratio [-]", ylabel="amplitude", xscale=:log10, title="(i)"),
      layout = @layout([a{0.3w} b{0.35w} c{0.35w}]), size=(900,div(900,3)),margin=5mm, left_margin=5mm, bottom_margin=5mm, fontsize=14, tickfontsize=14, legend_font_pointsize=14, labelfontsize=14, titlefontsize=14)
-savefig(pl, "DFTState.pdf")
+savefig(pl, "DFTState-tst.pdf")
 
 
 @load "FigureData-10dim-KOOPMAN-CAS4-1.bson" bb
@@ -137,7 +136,6 @@ pl = plot(
           [bbr1[3][2:id1], bbr2[3][2:id2], bbr3[3][2:id3], bbr4[3][2:id4], bbvf[3][2:idvf]], linestyle=[:solid :dash :dot :dashdot],linecolor=[:red :blue :darkgreen :purple :black],label=["ST-1" "ST-2" "ST-3" "ST-4" "VF"], legend_position=:bottomright, xlims=[0.001,0.1],ylims=[0,0.07],xlabel="damping ratio [-]", ylabel="amplitude", xscale=:log10, title="(b)"),
      layout = @layout([b{0.5w} c{0.5w}]), size=(900,div(900,3)),margin=5mm, left_margin=5mm, bottom_margin=5mm, fontsize=14, tickfontsize=14, legend_font_pointsize=14, labelfontsize=14, titlefontsize=14)
 savefig(pl, "Koopman.pdf")
-
 
 bbvf2 = executeVF2()
 idvf2 = findfirst(bbvf2[3] .> 0.07)

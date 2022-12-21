@@ -7,7 +7,7 @@ function execute()
     # MODEL FULL STATE
     @load "data/sys10dimTrainRED-1.bson" xs ys Tstep
     embedscales = ones(1,10)/10
-    SysName = "10dim-FULL-CAS4-1"
+    SysName = "10dim-FULL-CAS4-1-tst"
     dataINorig = xs
     dataOUTorig = ys
 

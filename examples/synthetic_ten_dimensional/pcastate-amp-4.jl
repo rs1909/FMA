@@ -7,7 +7,7 @@ function execute()
 # MODEL OBSERVED STATE
     NDIM = 16
     @load "data/sys10dimTrainPCA-$(NDIM)-4.bson" xs ys Tstep embedscales
-    SysName = "10dim-PCA-CAS4-$(NDIM)-4"
+    SysName = "10dim-PCA-CAS4-$(NDIM)-4-tst"
     dataINorig = xs
     dataOUTorig = ys
 
