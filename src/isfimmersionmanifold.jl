@@ -134,8 +134,8 @@ function vector_transport_to(M::ISFImmersionManifold, p, X, q, method::AbstractV
 end
 
 function EvalUhat(Mimm::ISFImmersionManifold, Ximm, MU, XU, Misf::ISFPadeManifold, Xisf, data)
-    dataPar = Eval(MU, XU, [Eval(PadeU(Misf), PadeUpoint(Xisf), data)] )
-    Uox = ImmersionU0point(Ximm) .+ Eval(ImmersionWp(Mimm), ImmersionWppoint(Ximm), data) .- Eval(ImmersionW0(Mimm), ImmersionW0point(Ximm), [dataPar])
+    dataPar = Eval(MU, XU, Eval(PadeU(Misf), PadeUpoint(Xisf), data) )
+    Uox = ImmersionU0point(Ximm) .+ Eval(ImmersionWp(Mimm), ImmersionWppoint(Ximm), data) .- Eval(ImmersionW0(Mimm), ImmersionW0point(Ximm), dataPar)
     return Uox
 end
 
@@ -144,8 +144,8 @@ function ISFImmersionLoss(M::ISFImmersionManifold{mdim, ndim, deficiency, Worder
     # U(x) = Wp.x - W0(z)
     scale = AmplitudeScaling(dataIN, M.Xstar)
 
-    Uox = Eval(ImmersionU0(M), ImmersionU0point(X), [dataIN]) .+ Eval(ImmersionWp(M), ImmersionWppoint(X), [dataIN]) .- Eval(ImmersionW0(M), ImmersionW0point(X), [dataParIN])
-    Uoy = Eval(ImmersionU0(M), ImmersionU0point(X), [dataOUT])  .+ Eval(ImmersionWp(M), ImmersionWppoint(X), [dataOUT]) .- Eval(ImmersionW0(M), ImmersionW0point(X), [dataParOUT])
+    Uox = Eval(ImmersionU0(M), ImmersionU0point(X), dataIN) .+ Eval(ImmersionWp(M), ImmersionWppoint(X), dataIN) .- Eval(ImmersionW0(M), ImmersionW0point(X), dataParIN)
+    Uoy = Eval(ImmersionU0(M), ImmersionU0point(X), dataOUT)  .+ Eval(ImmersionWp(M), ImmersionWppoint(X), dataOUT) .- Eval(ImmersionW0(M), ImmersionW0point(X), dataParOUT)
     UoxSq = sum(Uox .^ 2, dims=1)
     L0 = copy(Uoy)
     L0[1:end-deficiency,:] .-= ImmersionBpoint(X)[1:end-deficiency,1:end-deficiency] * Uox[1:end-deficiency,:]
@@ -157,8 +157,8 @@ function ISFImmersionGradient(M::ISFImmersionManifold{mdim, ndim, deficiency, Wo
     # U(x) = Wp.x - W0(z)
     scale = AmplitudeScaling(dataIN, M.Xstar)
 
-    Uox = ImmersionU0point(X) .+ Eval(ImmersionWp(M), ImmersionWppoint(X), [dataIN]) .- Eval(ImmersionW0(M), ImmersionW0point(X), [dataParIN])
-    Uoy = ImmersionU0point(X) .+ Eval(ImmersionWp(M), ImmersionWppoint(X), [dataOUT]) .- Eval(ImmersionW0(M), ImmersionW0point(X), [dataParOUT])
+    Uox = ImmersionU0point(X) .+ Eval(ImmersionWp(M), ImmersionWppoint(X), dataIN) .- Eval(ImmersionW0(M), ImmersionW0point(X), dataParIN)
+    Uoy = ImmersionU0point(X) .+ Eval(ImmersionWp(M), ImmersionWppoint(X), dataOUT) .- Eval(ImmersionW0(M), ImmersionW0point(X), dataParOUT)
     UoxSq = sum(Uox .^ 2, dims=1)
     # objfun = sum( (L0 .^ 2) .* exp.(C * UoxSq) ./ scale )/2/datalen
     L0 = Uoy .- ImmersionBpoint(X) * Uox
@@ -168,18 +168,18 @@ function ISFImmersionGradient(M::ISFImmersionManifold{mdim, ndim, deficiency, Wo
     L0deri1 = L0 .* exp.(C*UoxSq) ./ scale
     L0deri2 = C .* Uox .* sum(L0 .^ 2, dims=1) .* exp.(C*UoxSq) ./ scale
     # L0 otimes Uox
-    DB = L0_DF(ImmersionB(M), ImmersionBpoint(X), nothing, Uox, -1.0*L0deri1, nothing)/datalen
+    DB = L0_DF(ImmersionB(M), ImmersionBpoint(X), Uox, L0 = -1.0*L0deri1)/datalen
     DB[end+1-deficiency:end,:] .= 0
     DB[:,end+1-deficiency:end] .= 0
     # 
-    DW0 = ( L0_DF(ImmersionW0(M), ImmersionW0point(X), nothing, dataParOUT, -L0deri1, nothing) .+ 
-            L0_DF(ImmersionW0(M), ImmersionW0point(X), nothing, dataParIN, transpose(ImmersionBpoint(X))*L0deri1 .- L0deri2, nothing) )/datalen
+    DW0 = ( L0_DF(ImmersionW0(M), ImmersionW0point(X), dataParOUT, L0 = -L0deri1) .+ 
+            L0_DF(ImmersionW0(M), ImmersionW0point(X), dataParIN, L0 = transpose(ImmersionBpoint(X))*L0deri1 .- L0deri2) )/datalen
     #
 #     @show size(ImmersionWppoint(X)), size(dataOUT), size(L0)
-    DWp = ( L0_DF(ImmersionWp(M), ImmersionWppoint(X), nothing, dataOUT, L0deri1, nothing) .+
-            L0_DF(ImmersionWp(M), ImmersionWppoint(X), nothing, dataIN, -1.0*transpose(ImmersionBpoint(X))*L0deri1 .+ L0deri2, nothing) )/datalen
-    DU0 = ( L0_DF(ImmersionU0(M), ImmersionU0point(X), nothing, dataOUT, L0deri1, nothing) .+
-            L0_DF(ImmersionU0(M), ImmersionU0point(X), nothing, dataIN, -1.0*transpose(ImmersionBpoint(X))*L0deri1 .+ L0deri2, nothing) )/datalen
+    DWp = ( L0_DF(ImmersionWp(M), ImmersionWppoint(X), dataOUT, L0 = L0deri1) .+
+            L0_DF(ImmersionWp(M), ImmersionWppoint(X), dataIN, L0 = -1.0*transpose(ImmersionBpoint(X))*L0deri1 .+ L0deri2) )/datalen
+    DU0 = ( L0_DF(ImmersionU0(M), ImmersionU0point(X), dataOUT, L0 = L0deri1) .+
+            L0_DF(ImmersionU0(M), ImmersionU0point(X), dataIN, L0 = -1.0*transpose(ImmersionBpoint(X))*L0deri1 .+ L0deri2) )/datalen
     return ProductRepr(DB, DW0, DU0, DWp)
 end
 
@@ -221,8 +221,8 @@ function ImmersionReconstruct(Mimm, Xres, Misf, Xisf, MU, XU; rank_deficiency = 
     Q[1+din-dout:end,:] .= Ulin
 
     function UNewt(Mimm, Xres, Misf, Xisf, MU, XU, MW, XW, z)
-        X = [ EvalUhat(Mimm, Xres, MU, XU, Misf, Xisf, [reshape(Eval(MW, XW, [z]),:,1)]);
-              Eval(MU, XU, [Eval(PadeU(Misf), PadeUpoint(Xisf), [reshape(Eval(MWt, XWt, [z]),:,1)])] ) - z]
+        X = [ EvalUhat(Mimm, Xres, MU, XU, Misf, Xisf, reshape(Eval(MW, XW, z),:,1));
+              Eval(MU, XU, Eval(PadeU(Misf), PadeUpoint(Xisf), reshape(Eval(MWt, XWt, z),:,1)) ) - z]
         return vec(X)
     end
 
@@ -241,7 +241,7 @@ function ImmersionReconstruct(Mimm, Xres, Misf, Xisf, MU, XU; rank_deficiency = 
         XWt2 = XWt - Q \ fromFunction(MWt, (z) -> UNewt(Mimm, Xres, Misf, Xisf, MU, XU, MWt, XWt, z))
         XWt .= XWt2
     end
-    println("Steady state = ", Eval(MWt, XWt, [zeros(dout)]))
+    println("Steady state = ", Eval(MWt, XWt, zeros(dout)))
     
     return MWt, XWt
 end
@@ -263,8 +263,8 @@ function ISFImmersionSolve!(Mimm, Ximm, Misf, Xisf, MU, XU, S2, U2, dataIN, data
     # the parameters of the manifold using the submersion we have calculated
     dout, din = size(PadeUpoint(Xisf).parts[1]')
     
-    dataParIN = Eval(MU, XU, [Eval(PadeU(Misf), PadeUpoint(Xisf), [dataIN])] )
-    dataParOUT = Eval(MU, XU, [Eval(PadeU(Misf), PadeUpoint(Xisf), [dataOUT])] )
+    dataParIN = Eval(MU, XU, Eval(PadeU(Misf), PadeUpoint(Xisf), dataIN) )
+    dataParOUT = Eval(MU, XU, Eval(PadeU(Misf), PadeUpoint(Xisf), dataOUT) )
 
     # To initialise:
     #   Assume that 

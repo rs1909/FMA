@@ -175,10 +175,10 @@ function ScalingFunctions(M_A, X_A12, X_A22, X_A10, X_A20, r0)
     #   delta' = - A12/A22
     #   kappa' = A10 + A20 * delta'
     #---------------------------------------------------------
-    A12 = t -> Eval(M_A, X_A12,[[t]])[1]
-    A22 = t -> Eval(M_A, X_A22,[[t]])[1]
-    A10 = t -> Eval(M_A, X_A10,[[t]])[1]
-    A20 = t -> Eval(M_A, X_A20,[[t]])[1]
+    A12 = t -> Eval(M_A, X_A12,[t])[1]
+    A22 = t -> Eval(M_A, X_A22,[t])[1]
+    A10 = t -> Eval(M_A, X_A10,[t])[1]
+    A20 = t -> Eval(M_A, X_A20,[t])[1]
     # delta derivative
     deltap = -[A12(t) for t in r0]./[A22(t) for t in r0]
     # integrate deltap: trapezoid with zero initial condition
@@ -233,7 +233,7 @@ function ODEManifoldFrequencyDamping(MWt, XWt, MS, XS, r0; output=nothing)
         end
         return T_r, R_r
     end
-    Sout = x -> Eval(MS, XS,[x])
+    Sout = x -> Eval(MS, XS,x)
     # ODE
     T_t, R_t = VF_S_T_R(Sout, t)
 
@@ -275,11 +275,11 @@ function MAPManifoldFrequencyDamping(MWt, XWt, MS, XS, r0, Tstep; output=nothing
     end
     deltap_t, delta_t, kappap_t, kappa_t, r, t = ScalingFunctions(M_A, X_A12, X_A22, X_A10, X_A20, r0)
 
-    A12 = t -> Eval(M_A, X_A12,[[t]])[1]
-    A22 = t -> Eval(M_A, X_A22,[[t]])[1]
-    A10 = t -> Eval(M_A, X_A10,[[t]])[1]
-    A20 = t -> Eval(M_A, X_A20,[[t]])[1]
-    Sout = x -> Eval(MS, XS,[x])
+    A12 = t -> Eval(M_A, X_A12,[t])[1]
+    A22 = t -> Eval(M_A, X_A22,[t])[1]
+    A10 = t -> Eval(M_A, X_A10,[t])[1]
+    A20 = t -> Eval(M_A, X_A20,[t])[1]
+    Sout = x -> Eval(MS, XS, x)
     
     function S_Real_Imag(S, r)
         Sr = S([r, 0.0])

@@ -91,11 +91,11 @@ function FoliationIdentify(dataINorig, dataOUTorig, Tstep, embedscales, SysName,
 
     M_A, A00 = ManifoldAmplitudeSquare(MWt, XWt)
 
-    ROMdata = (transpose(vec(embedscales)) * Eval(MWt, XWt, [dataParIN]))
+    ROMdata = (transpose(vec(embedscales)) * Eval(MWt, XWt, dataParIN))
     dataAmps2 = sqrt.(dropdims(sum(ROMdata .^ 2, dims=1),dims=1)) .* sign.(ROMdata[1,:])
     @show size(sign.(ROMdata[1,:])), size(sqrt.(sum(ROMdata .^ 2, dims=1))), size(dataAmps2)
     
     data_freq, data_damp, data_r, freq_old, damp_old, r_old = MAPManifoldFrequencyDamping(MWt, XWt, MS, XS, r, Tstep; output = transpose(vec(embedscales)))
-    Wamp = [ sqrt(Eval(M_A, A00, [[x]])[1]) for x in r_old]
+    Wamp = [ sqrt(Eval(M_A, A00, [x])[1]) for x in r_old]
     return data_freq, data_damp, data_r*scale, scale, freq_old, damp_old, r_old*scale, Wamp, dataAmps2*scale
 end

@@ -91,7 +91,7 @@ function define_tree(d, tree_type = :balanced)
 end
 
 # a complicated constructor
-function TensorManifold(dims::Array{T,1}, topdim::T, ranks::Array{T,1}, children, dim2ind, B=nothing, tree_type = :balanced; field::AbstractNumbers=ℝ) where T <: Integer
+function TensorManifold(dims::Array{T,1}, topdim::T, ranks::Array{T,1}, children, dim2ind, tree_type = :balanced; field::AbstractNumbers=ℝ) where T <: Integer
     M = []
     R = []
     VT = []
@@ -99,15 +99,7 @@ function TensorManifold(dims::Array{T,1}, topdim::T, ranks::Array{T,1}, children
         if is_leaf(children, ii)
             dim_id = findfirst(isequal(ii), dim2ind)
             n_ii = dims[dim_id]
-            if B == nothing
-                push!(M, Stiefel(n_ii, ranks[ii]))
-            else
-#                 if dim_id == 1
-                    push!(M, RestrictedStiefel(n_ii, ranks[ii], B))
-#                 else
-#                     push!(M, Stiefel(n_ii, ranks[ii]))
-#                 end
-            end
+            push!(M, Stiefel(n_ii, ranks[ii]))
             push!(R, PolarRetraction())
             push!(VT, DifferentiatedRetractionVectorTransport(PolarRetraction()))
         else
@@ -128,19 +120,14 @@ function TensorManifold(dims::Array{T,1}, topdim::T, ranks::Array{T,1}, children
 end
 
 # create a rank structure such that 'ratio' is the lost rank
-function cascade_ranks(children, dim2ind, topdim, dims, B=nothing; node_ratio = 1.0, leaf_ratio = min(1.0, 2/minimum(dims)), max_rank = 18)
-    if B == nothing
-        ranksub = 0
-    else
-        ranksub = size(B,2)
-    end
+function cascade_ranks(children, dim2ind, topdim, dims; node_ratio = 1.0, leaf_ratio = min(1.0, 2/minimum(dims)), max_rank = 18)
     ranks = zeros(size(children[:,1]))
     ranks[1] = topdim
     for ii = nr_nodes(children):-1:2
         if is_leaf(children, ii)
             ldim = dims[findfirst(isequal(ii), dim2ind)]
             ranks[ii] = ldim * leaf_ratio
-            n_ii = ldim - ranksub
+            n_ii = ldim
             if ranks[ii] > min(n_ii, max_rank)
                 ranks[ii] = min(n_ii, max_rank)
             end
@@ -158,16 +145,11 @@ function cascade_ranks(children, dim2ind, topdim, dims, B=nothing; node_ratio = 
 end
 
 #  the output rank cannot be greater than the input rank
-function prune_ranks!(dims::Array{T,1}, topdim::T, ranks::Array{T,1}, children, dim2ind, B=nothing) where T <: Integer
-    if B == nothing
-        ranksub = 0
-    else
-        ranksub = size(B,2)
-    end
+function prune_ranks!(dims::Array{T,1}, topdim::T, ranks::Array{T,1}, children, dim2ind) where T <: Integer
     ranks[1] = topdim
     for ii = nr_nodes(children):-1:2
         if is_leaf(children, ii)
-            n_ii = dims[findfirst(isequal(ii), dim2ind)] - ranksub
+            n_ii = dims[findfirst(isequal(ii), dim2ind)]
             if ranks[ii] > n_ii
                 ranks[ii] = n_ii
             end
@@ -182,26 +164,26 @@ function prune_ranks!(dims::Array{T,1}, topdim::T, ranks::Array{T,1}, children, 
     return nothing
 end
 
-function MinimalTensorManifold(dims::Array{T,1}, topdim::T = 1, B=nothing, tree_type = :balanced) where T <: Integer
+function MinimalTensorManifold(dims::Array{T,1}, topdim::T = 1, tree_type = :balanced) where T <: Integer
     children, dim2ind = define_tree(length(dims), tree_type)
     nodes = nr_nodes(children)
     # create ranks at each node
     ranks = ones(Int, nodes)
     # the root node is singular
-    prune_ranks!(dims, topdim, ranks, children, dim2ind, B)
-    return TensorManifold(dims, topdim, ranks, children, dim2ind, B, tree_type)
+    prune_ranks!(dims, topdim, ranks, children, dim2ind)
+    return TensorManifold(dims, topdim, ranks, children, dim2ind, tree_type)
 end
 
 """
-    TODO
+    TODO: documentation
 """
-function HTTensor(dims::Array{T,1}, topdim::T = 1, B=nothing, tree_type = :balanced; node_rank = 4) where T <: Integer
+function HTTensor(dims::Array{T,1}, topdim::T = 1, tree_type = :balanced; node_rank = 4) where T <: Integer
     children, dim2ind = define_tree(length(dims), tree_type)
     nodes = nr_nodes(children)
     # create ranks at each node
-    ranks = cascade_ranks(children, dim2ind, topdim, dims, B, node_ratio = 1.0, leaf_ratio = min(1.0, node_rank/minimum(dims)), max_rank = 18)
+    ranks = cascade_ranks(children, dim2ind, topdim, dims, node_ratio = 1.0, leaf_ratio = min(1.0, node_rank/minimum(dims)), max_rank = 18)
     @show ranks
-    return TensorManifold(dims, topdim, ranks, children, dim2ind, B, tree_type)
+    return TensorManifold(dims, topdim, ranks, children, dim2ind, tree_type)
 end
     
 function project!(M::TensorManifold{field}, Y, p, X) where field
@@ -386,51 +368,29 @@ end
 #   third: if non-zero, the index not to contract
 #   dt: to replace X at index rep
 #   rep: where to replace X with dt
-function tensorVecsRecursive!(DV::diadicVectors{T}, M::TensorManifold{field}, X, data::Vector{Matrix{T}}, ii; second::Integer = 0, third::Integer = 0, dt::ProductRepr = ProductRepr(), rep::Integer = 0) where {field, T}
+function tensorVecsRecursive!(DV::diadicVectors{T}, M::TensorManifold{field}, X, data::Vararg{Matrix{T}}; ii) where {field, T}
+#     print("v=", ii, "/", length(X.parts), "_")
     if DV.valid_vecs[ii]
         return nothing
     end
-    if ii != rep
-        B = X.parts[ii]
-    else
-        B = dt.parts[ii]
-    end
-#     @show ii, is_leaf(M, ii), size(X.parts[ii]), M.children[ii,:]
+    B = X.parts[ii]
     if is_leaf(M, ii)
         # it is a leaf
         dim = findfirst(isequal(ii), M.dim2ind)
-        if second == dim
-            wdim = 2
-        elseif second > 0
-            wdim = 1
-        elseif dim > length(data)
+        if dim > length(data)
             wdim = length(data)
         else
             wdim = dim
         end
-        if dim == third
-            contract = false
-        else
-            contract = true
-        end
-#         @show wdim, contract, length(data), third
-        if contract
-#             tt = zeros(T, size(B,2), 1, size(data[1],2) )
-            DV.vecs[ii] = zeros(T, size(B,2), 1, size(data[1],2) ) # Array{T}(undef, (size(B,2), 1, size(data[1],2)))
+        DV.vecs[ii] = zeros(T, size(B,2), 1, size(data[1],2) ) # Array{T}(undef, (size(B,2), 1, size(data[1],2)))
 #             @show size(DV.vecs[ii]), size(B), size(data[wdim])
-            BmulData!(DV.vecs[ii], B, data[wdim])
-        else
-            DV.vecs[ii] = zeros(T, size(B,2), size(B,1), size(data[1],2) )
-            for k=1:size(data[1],2)
-                @views DV.vecs[ii][:,:,k] .= transpose(B)
-            end
-        end
+        BmulData!(DV.vecs[ii], B, data[wdim])
     else
         # it is a node
         ii_left = M.children[ii,1]
         ii_right = M.children[ii,2]
-        tensorVecsRecursive!(DV, M, X, data, ii_left; second = second, third = third, dt = dt, rep = rep)
-        tensorVecsRecursive!(DV, M, X, data, ii_right; second = second, third = third, dt = dt, rep = rep)
+        tensorVecsRecursive!(DV, M, X, data..., ii = ii_left)
+        tensorVecsRecursive!(DV, M, X, data..., ii = ii_right)
         vs_l = size(DV.vecs[ii_left], 2)
         vs_r = size(DV.vecs[ii_right], 2)
         vs = max(vs_l,vs_r)
@@ -438,8 +398,6 @@ function tensorVecsRecursive!(DV::diadicVectors{T}, M::TensorManifold{field}, X,
         
         LmulBmulR!(DV.vecs[ii], DV.vecs[ii_left], B, DV.vecs[ii_right])
     end
-    # This is an error. It must return something
-#     @show ii, vecs[ii]
     DV.valid_vecs[ii] = true
     return nothing
 end
@@ -449,6 +407,7 @@ function tensorVecsInvalidate(DV::diadicVectors{T}, M::TensorManifold{field}, ii
     DV.valid_vecs[ii] = false
     # not the root node
     if ii != 1
+        # find parent. Everything has a parent!
         left = findfirst(isequal(ii), M.children[:,1])
         right = findfirst(isequal(ii), M.children[:,2])
         if left != nothing
@@ -461,70 +420,19 @@ function tensorVecsInvalidate(DV::diadicVectors{T}, M::TensorManifold{field}, ii
     return nothing
 end
 
-function tensorHessianRecursive(M::TensorManifold{field}, X, data, ii, d1, d2) where field
-    B = X.parts[ii]
-    if is_leaf(M, ii)
-        if ii == d1
-            hess = zeros(size(B,2), 1, size(B,1), size(data,2))
-            for k=1:size(data,2)
-                hess[:,1,:,k] .= transpose(B)
-            end
-        elseif ii == d2
-            hess = zeros(size(B,2), size(B,1), 1, size(data,2))
-            for k=1:size(data,2)
-                hess[:,:,1,k] .= transpose(B)
-            end
-        else
-            hess = sum(reshape(transpose(B), size(B,2), size(B,1), 1, 1) .* reshape(data, 1, size(data,1), 1, size(data,2)), dims=2)
-        end
-    else
-        ii_left  = M.children[ii,1]
-        ii_right = M.children[ii,2]
-        v_l = tensorHessianRecursive(M, X, data, ii_left, d1, d2)
-        v_r = tensorHessianRecursive(M, X, data, ii_right, d1, d2)
-        vs_l = size(v_l, 1)
-        vs_r = size(v_r, 1)
-        hess = zeros(size(B,2), size(v_l,2)*size(v_r,2), size(v_l,3)*size(v_r,3), size(data,2))
-#         @show ii, size(hess), size(v_l), size(v_r)
-        for j1 = 1:vs_r, j2 = 1:vs_l
-            for l = 1:size(data,2), q_l = 1:size(v_l,3), q_r = 1:size(v_r,3), p_l = 1:size(v_l,2), p_r = 1:size(v_r,2)
-                for r=1:size(B,2)
-                    hess[r, p_l*p_r, q_l*q_r, l] += B[j2 + (j1-1)*vs_l, r] * v_l[j2, p_l, q_l, l] .* v_r[j1, p_r, q_r, l]
-                end
-            end
-        end
-    end
-    return hess
-end
-
-function Hessian(M::TensorManifold{field}, X, data) where field
-    hess = zeros(size(X.parts[1],2), size(data,1), size(data,1), size(data,2))
-    for d1 in M.dim2ind
-        for d2 in M.dim2ind
-            if d1 != d2
-#                 println("H ", d1, " ", d2)
-                hessDelta = tensorHessianRecursive(M, X, data, 1, d1, d2)
-#                 @show size(hess), size(hessDelta)  
-                hess .+= hessDelta
-            end
-        end
-    end
-    return hess
-end
-
 # create partial results at the end of each node or leaf when multiplied with 'data'
-function tensorVecs(M::TensorManifold{field}, X, data::Vector{Matrix{T}}; second::Integer = 0, third::Integer = 0, dt::ProductRepr = ProductRepr(), rep::Integer = 0) where {field, T}
+function tensorVecs(M::TensorManifold{field}, X, data::Vararg{Matrix{T}}; second::Integer = 0, third::Integer = 0, dt::ProductRepr = ProductRepr(), rep::Integer = 0) where {field, T}
     DV = diadicVectors(T, size(M.children, 1))
-    tensorVecsRecursive!(DV, M, X, data, 1; second = second, third = third, dt = dt, rep = rep)
+    tensorVecsRecursive!(DV, M, X, data..., ii = 1)
     return DV
 end
 
-# topdata is a multiplication from the left
-function Eval(M::TensorManifold{field}, X, data, topdata = nothing; DV::diadicVectors = tensorVecs(M, X, data)) where field
-    if topdata == nothing
+# L0 is a multiplication from the left
+function Eval(M::TensorManifold{field}, X, data::Vararg{Matrix{T}}; L0 = nothing, DV::diadicVectors = tensorVecs(M, X, data)) where {T, field}
+    if L0 == nothing
         return dropdims(DV.vecs[1], dims=2)
     else
-        return dropdims(sum(DV.vecs[1] .* reshape(topdata, size(topdata,1), 1, size(topdata,2)), dims=1), dims=(1,2))
+        return dropdims(sum(DV.vecs[1] .* reshape(L0, size(L0,1), 1, size(L0,2)), dims=1), dims=(1,2))
     end
 end
 
@@ -544,22 +452,18 @@ end
 # Only supports full contraction
 # dt is used for second derivatives. dt replaces X at node [rep].
 # This is the same as taking the derivative w.r.t. node [rep] and multiplying by dt[rep]
-# topdata is used to contract with tensor output
-function tensorBVecsIndexed!(DV::diadicVectors{T}, M::TensorManifold{field}, X, topdata, ii; dt::ProductRepr = ProductRepr(), rep::Integer = 0) where {field, T}
+# L0 is used to contract with tensor output
+function tensorBVecsIndexed!(DV::diadicVectors{T}, M::TensorManifold{field}, X; ii) where {field, T}
+#     print("b=", ii, "/", length(X.parts), "_")
     # find the parent and multiply with the vecs from the other brancs and the becs fron the bottom
     if DV.valid_bvecs[ii]
         return nothing
     end
     datalen = size(DV.vecs[1],3)
     if ii==1
-        if topdata == nothing
-            DV.bvecs[ii] = zeros(T, size(X.parts[ii],2), size(X.parts[ii],2), datalen)
-            for k=1:size(X.parts[ii],2)
-                DV.bvecs[ii][k,k,:] .= 1
-            end
-        else
-            DV.bvecs[ii] = zeros(T, 1, size(X.parts[ii],2), datalen)
-            DV.bvecs[ii][1,:,:] .= topdata
+        DV.bvecs[ii] = zeros(T, size(X.parts[ii],2), size(X.parts[ii],2), datalen)
+        for k=1:size(X.parts[ii],2)
+            DV.bvecs[ii][k,k,:] .= 1
         end
     else
         # find parent. Everything has a parent!
@@ -568,31 +472,23 @@ function tensorBVecsIndexed!(DV::diadicVectors{T}, M::TensorManifold{field}, X, 
         if left != nothing
             # B[left,right,parent] <- parent = BVecs[parent], right = vecs[sibling]
             parent = left
-            if parent != rep
-                B = X.parts[parent]
-            else
-                B = dt.parts[parent]
-            end
+            B = X.parts[parent]
             s_l = size(X.parts[M.children[parent,1]],2)
             s_r = size(X.parts[M.children[parent,2]],2)
             sibling = M.children[left,2] # right sibling
-            tensorBVecsIndexed!(DV, M, X, topdata, parent; dt = dt, rep = rep)
+            tensorBVecsIndexed!(DV, M, X, ii = parent)
             DV.bvecs[ii] = zeros(T, size(DV.bvecs[parent],1), s_l, datalen)
             BVpmulBmulV!(DV.bvecs[ii], B, DV.vecs[sibling], DV.bvecs[parent])
         end
         if right != nothing
             # B[left,right,parent] <- parent = BVecs[parent], right = vecs[sibling]
             parent = right
-            if parent != rep
-                B = X.parts[parent]
-            else
-                B = dt.parts[parent]
-            end
+            B = X.parts[parent]
             s_l = size(X.parts[M.children[parent,1]],2)
             s_r = size(X.parts[M.children[parent,2]],2)
 
             sibling = M.children[right,1] # right sibling
-            tensorBVecsIndexed!(DV, M, X, topdata, parent; dt = dt, rep = rep)
+            tensorBVecsIndexed!(DV, M, X, ii = parent)
 #             @show size(X.B[parent]), size(DV.bvecs[parent]), size(vec(vecs[sibling]))
             DV.bvecs[ii] = zeros(T, size(DV.bvecs[parent],1), s_r, datalen)
             VmulBmulBVp!(DV.bvecs[ii], DV.vecs[sibling], B, DV.bvecs[parent])
@@ -602,206 +498,73 @@ function tensorBVecsIndexed!(DV::diadicVectors{T}, M::TensorManifold{field}, X, 
     return nothing
 end
 
-# if ii == 0, topdata is invalid.
+
 # if ii > 0  -> all children nodes get invalidate
 function tensorBVecsInvalidate(DV::diadicVectors{T}, M::TensorManifold{field}, ii) where {field, T}
-    if ii == 0
-        DV.valid_bvecs[1] = false
-        tensorBVecsInvalidate(DV, M, 1)
+    # the root is always the identity, no need to update
+    if is_leaf(M, ii)
+        # do nothing as it has no children
     else
-        if is_leaf(M, ii)
-            # do nothing as it has no children
-        else
-            ii_left = M.children[ii,1]
-            ii_right = M.children[ii,2]
-            DV.valid_bvecs[ii_left] = false
-            DV.valid_bvecs[ii_right] = false
-            tensorBVecsInvalidate(DV, M, ii_left)
-            tensorBVecsInvalidate(DV, M, ii_right)
-        end
+        ii_left = M.children[ii,1]
+        ii_right = M.children[ii,2]
+        DV.valid_bvecs[ii_left] = false
+        DV.valid_bvecs[ii_right] = false
+        tensorBVecsInvalidate(DV, M, ii_left)
+        tensorBVecsInvalidate(DV, M, ii_right)
     end
     return nothing
 end
 
-function tensorBVecs!(DV::diadicVectors, M::TensorManifold{field}, X, topdata = nothing; dt::ProductRepr = ProductRepr(), rep::Integer = 0) where field
+function tensorBVecs!(DV::diadicVectors, M::TensorManifold{field}, X) where field
     if size(DV.vecs[1],2) != 1
         println("only supports full contraction")
         return nothing
     end
     datalen = size(DV.vecs[1],3)
     for ii=1:nr_nodes(M)
-        tensorBVecsIndexed!(DV, M, X, topdata, ii; dt = dt, rep = rep)
+        tensorBVecsIndexed!(DV, M, X, ii = ii)
     end
     return nothing
 end
 
-function makeCache(M::TensorManifold, X, data::Vector{Matrix{T}}, topdata = nothing) where T
+function makeCache(M::TensorManifold, X, data::Vararg{Matrix{T}}) where T
     DV = diadicVectors(T, size(M.children, 1))
-    tensorVecsRecursive!(DV, M, X, data, 1)
-    tensorBVecs!(DV, M, X, topdata)
+    tensorVecsRecursive!(DV, M, X, data...; ii = 1)
+    tensorBVecs!(DV, M, X)
     return DV
 end
 
 # update the content which is invalidated
-function updateCache!(DV::diadicVectors, M::TensorManifold, X, data::Vector{Matrix{T}}, topdata = nothing) where T
-    tensorVecsRecursive!(DV, M, X, data, 1)
-    tensorBVecs!(DV, M, X, topdata)
+function updateCache!(DV::diadicVectors, M::TensorManifold, X, data::Vararg{Matrix{T}}) where T
+    DV.valid_vecs .= false
+    DV.valid_bvecs .= false
+    tensorVecsRecursive!(DV, M, X, data..., ii = 1)
+    tensorBVecs!(DV, M, X)
     return nothing
 end
 
-function updateCachePartial!(DV::diadicVectors, M::TensorManifold, X, data::Vector{Matrix{T}}, ii, topdata = nothing) where T
-    tensorVecsRecursive!(DV, M, X, data, 1)
-    tensorBVecsIndexed!(DV, M, X, topdata, ii)
+function updateCachePartial!(DV::diadicVectors, M::TensorManifold, X, data::Vararg{Matrix{T}}; ii) where T
+    tensorVecsInvalidate(DV, M, ii)
+    tensorBVecsInvalidate(DV, M, ii)
+    # make sure to update all the marked components
+    # Vecs can start at the root (ii = 1), hence it covers the full tree
+    tensorVecsRecursive!(DV, M, X, data..., ii = 1)
+    # BVecs has to start from all the leaves to cover the whole tree
+    tensorBVecs!(DV, M, X)
     return nothing
-end
-
-# So the gradient of
-# L0 = QoUoy - PoUox
-# loss = 1/2 L0^T . L0
-
-function tensorLoss(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT)
-    Uoy = Eval(MU, XU, [dataOUT])
-    Uox = Eval(MU, XU, [dataIN])
-    QoUoy = Eval(MQ, XQ, [Uoy])
-    PoUox = Eval(MP, XP, [Uox])
-    L0 = QoUoy .- PoUox
-    return sum(L0 .^ 2)/2
-end
-
-# grad_P = - L0^T . DPoUox
-# grad_Q = L0^T DQoUoy
-# grad_U = L0^T (JQoUoy x DUoy - JPoUox x DUox)
-
-function tensorGradientP(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT, ii)
-    Uoy = Eval(MU, XU, [dataOUT])
-    Uox = Eval(MU, XU, [dataIN])
-    QoUoy = Eval(MQ, XQ, [Uoy])
-    PoUox = Eval(MP, XP, [Uox])
-    L0 = QoUoy .- PoUox
-
-    DVP = tensorVecs(MP, XP, [Uox])
-    tensorBVecs!(DVP, MP, XP)
-    return L0_DF(MP, XP, DVP, Uox, -1.0*L0, ii)
-end
-
-function tensorGradientQ(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT, ii)
-    Uoy = Eval(MU, XU, [dataOUT])
-    Uox = Eval(MU, XU, [dataIN])
-    QoUoy = Eval(MQ, XQ, [Uoy])
-    PoUox = Eval(MP, XP, [Uox])
-    L0 = QoUoy .- PoUox
-
-    DVQ = tensorVecs(MQ, XQ, [Uoy])
-    tensorBVecs!(DVQ, MQ, XQ)
-    return L0_DF(MQ, XQ, DVQ, Uoy, L0, ii)
-end
-
-function tensorGradientU(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT, ii)
-    Uoy = Eval(MU, XU, [dataOUT])
-    Uox = Eval(MU, XU, [dataIN])
-    QoUoy = Eval(MQ, XQ, [Uoy])
-    PoUox = Eval(MP, XP, [Uox])
-    L0 = QoUoy .- PoUox
-    
-    # the Jacobians call tensorVecs for each leaf once, so they are expensive
-    JQoUoy = Jacobian(MQ, XQ, Uoy)
-    JPoUox = Jacobian(MP, XP, Uox)
-    L0_JQoUoy = dropdims(sum(JQoUoy .* reshape(L0, size(L0,1), 1, size(L0,2)), dims=1), dims=1)
-    L0_JPoUox = dropdims(sum(JPoUox .* reshape(L0, size(L0,1), 1, size(L0,2)), dims=1), dims=1)
-    DVUoy = tensorVecs(MU, XU, [dataOUT])
-    tensorBVecs!(DVUoy, MU, XU)
-    DVUox = tensorVecs(MU, XU, [dataIN])
-    tensorBVecs!(DVUox, MU, XU)
-    return L0_DF(MU, XU, DVUoy, dataOUT, L0_JQoUoy, ii) .- L0_DF(MU, XU, DVUox, dataIN, L0_JPoUox, ii)
-end
-
-# hess_P = DPoUox^T x DPoUox
-# hess_Q = DQoUoy^T x DQoUoy
-# hess_U = 
-#     + DUox^T x JPoUox^T x JPoUox x DUox   -> 1
-#     + DUoy^T x JQoUoy^T x JQoUoy x DUoy   -> 2
-#     - DUox^T x JPoUox^T x JQoUoy x DUoy   -> 3
-#     - DUoy^T x JQoUoy^T x JPoUox x DUox   -> 3^T          
-#     - DUox^T x L0J2PoUox x DUox
-#     + DUoy^T x L0J2QoUoy x DUoy
-
-function tensorGradientHessianP(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT, ii)
-    Uoy = Eval(MU, XU, [dataOUT])
-    Uox = Eval(MU, XU, [dataIN])
-    QoUoy = Eval(MQ, XQ, [Uoy])
-    PoUox = Eval(MP, XP, [Uox])
-    L0 = QoUoy .- PoUox
-
-    DVP = tensorVecs(MP, XP, [Uox])
-    tensorBVecs!(DVP, MP, XP)
-    
-    grad = L0_DF(MP, XP, DVP, Uox, -1.0*L0, ii)
-    hess = DFoxT_DFox(MP, DVP, Uox, ii)
-    return grad, hess
-end
-
-function tensorGradientHessianQ(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT, ii)
-    Uoy = Eval(MU, XU, [dataOUT])
-    Uox = Eval(MU, XU, [dataIN])
-    QoUoy = Eval(MQ, XQ, [Uoy])
-    PoUox = Eval(MP, XP, [Uox])
-    L0 = QoUoy .- PoUox
-
-    DVQ = tensorVecs(MQ, XQ, [Uoy])
-    tensorBVecs!(DVQ, MQ, XQ)
-    
-    grad = L0_DF(MQ, XQ, DVQ, Uoy, L0, ii)
-    hess = DFoxT_DFox(MQ, DVQ, Uoy, ii)
-
-    return grad, hess
-end
-
-function tensorGradientHessianU(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT, ii)
-#       DUox^T x JPoUox^T x JPoUox x DUox   -> 1
-#     + DUoy^T x JQoUoy^T x JQoUoy x DUoy   -> 2
-#     - DUox^T x JPoUox^T x JQoUoy x DUoy   -> 3
-#     - DUoy^T x JQoUoy^T x JPoUox x DUox   -> 3^T
-#     - DUox^T x L0J2PoUox x DUox
-#     + DUoy^T x L0J2QoUoy x DUoy
-    Uoy = Eval(MU, XU, [dataOUT])
-    Uox = Eval(MU, XU, [dataIN])
-    QoUoy = Eval(MQ, XQ, [Uoy])
-    PoUox = Eval(MP, XP, [Uox])
-    L0 = QoUoy .- PoUox
-
-    JQoUoy = Jacobian(MQ, XQ, Uoy)
-    JPoUox = Jacobian(MP, XP, Uox)
-    
-    # the hessians or P and Q
-#     println("Hessian")
-    J2QoUoy = Hessian(MQ, XQ, Uoy)
-    J2PoUox = Hessian(MP, XP, Uox)
-    L0J2QoUoy = dropdims(sum(J2QoUoy .* reshape(L0, size(L0,1), 1, 1, size(L0,2)), dims=1), dims=1)
-    L0J2PoUox = dropdims(sum(J2PoUox .* reshape(L0, size(L0,1), 1, 1, size(L0,2)), dims=1), dims=1)
-    
-    DVUoy = tensorVecs(MU, XU, [dataOUT])
-    tensorBVecs!(DVUoy, MU, XU)
-    DVUox = tensorVecs(MU, XU, [dataIN])
-    tensorBVecs!(DVUox, MU, XU)
-
-    hess = DFT_JFT_JF_DF(MU, DVUox, DVUoy, JPoUox, JQoUoy, L0J2PoUox, L0J2QoUoy, dataIN, dataOUT, ii)
-
-    # FOR THE GRADIENT
-    L0_JQoUoy = dropdims(sum(JQoUoy .* reshape(L0, size(L0,1), 1, size(L0,2)), dims=1), dims=1)
-    L0_JPoUox = dropdims(sum(JPoUox .* reshape(L0, size(L0,1), 1, size(L0,2)), dims=1), dims=1)
-    # grad_U = L0^T (JQoUoy x DUoy - JPoUox x DUox)
-    grad = L0_DF(MU, XU, DVUoy, dataOUT, L0_JQoUoy, ii) .- L0_DF(MU, XU, DVUox, dataIN, L0_JPoUox, ii)
-    return grad, hess
 end
 
 # same as wDF, except that it only applies to node ii
-function L0_DF(M::TensorManifold{field}, X, DV, data, L0, ii) where field
+function L0_DF_parts(M::TensorManifold{field}, X, data; L0, ii::Integer = -1, DV = makeCache(M, X, data)) where field
 #     t0 = time()
     if is_leaf(M, ii)
         @tullio XO[p,q] := L0[l,k] * data[p,k] * DV.bvecs[ii][l,q,k]
     else
         # it is a node
-        @tullio XOp[p,q,r] := L0[l,k] * DV.vecs[M.children[ii,1]][p,1,k] * DV.vecs[M.children[ii,2]][q,1,k] * DV.bvecs[ii][l,r,k]
+        ch1 = DV.vecs[M.children[ii,1]]
+        ch2 = DV.vecs[M.children[ii,2]]
+        bv = DV.bvecs[ii]
+        @tullio XOp[p,q,r] := L0[l,k] * ch1[p,1,k] * ch2[q,1,k] * bv[l,r,k]
         XO = reshape(XOp, :, size(XOp,3))
     end
 #     t1 = time()
@@ -809,9 +572,35 @@ function L0_DF(M::TensorManifold{field}, X, DV, data, L0, ii) where field
     return XO
 end
 
+function L0_DF(M::TensorManifold{field}, X, data; L0, DV = makeCache(M, X, data)) where field
+#     @show Tuple(collect(1:length(M.M.manifolds)))
+# @show size(data[1]), size(L0), size(DV.bvecs)
+    return ProductRepr(map((x) -> L0_DF_parts(M, X, data, L0 = L0, ii = x, DV = DV), Tuple(collect(1:length(M.M.manifolds)))) )
+end
+
+# L0 is a square matrix ...
+function L0_DF1_DF2_parts(M::TensorManifold{field}, X, L0, dataX, dataY; ii::Integer = -1, DVX = makeCache(M, X, dataX), DVY = makeCache(M, X, dataY)) where field
+    if is_leaf(M, ii)
+        @tullio XO[p1,q1,p2,q2] := L0[r1,r2,k] * dataX[p1,k] * DVX.bvecs[ii][r1,q1,k] * dataY[p2,k] * DVY.bvecs[ii][r2,q2,k]
+        return XO
+    else
+        # it is a node
+#         @show ii, M.children[ii,1], M.children[ii,2]
+        chX1 = DVX.vecs[M.children[ii,1]]
+        chX2 = DVX.vecs[M.children[ii,2]]
+        bvX = DVX.bvecs[ii]
+        chY1 = DVY.vecs[M.children[ii,1]]
+        chY2 = DVY.vecs[M.children[ii,2]]
+        bvY = DVY.bvecs[ii]
+        @tullio XOp[p1,q1,r1,p2,q2,r2] := L0[l1,l2,k] * chX1[p1,1,k] * chX2[q1,1,k] * bvX[l1,r1,k] * chY1[p2,1,k] * chY2[q2,1,k] * bvY[l2,r2,k]
+        XO = reshape(XOp, size(XOp,1)*size(XOp,2), size(XOp,3), size(XOp,4)*size(XOp,5), size(XOp,6))
+        return XO
+    end
+end
+
 # instead of multiplying the gradient from the left, we are multiplying it from the right
 # there is no contraction along the indices of data...
-function DF_dt(M::TensorManifold{field}, X, DV, data, dt, ii) where field
+function DF_dt_parts(M::TensorManifold{field}, X, data; dt, ii, DV = makeCache(M, X, data)) where field
     if is_leaf(M, ii)
         @tullio XO[l,k] := DV.bvecs[ii][l,q,k] * data[p,k] * dt[p,q]
     else
@@ -822,6 +611,10 @@ function DF_dt(M::TensorManifold{field}, X, DV, data, dt, ii) where field
     end
 #     @show size(data), size(dt), size(XO)
     return XO
+end
+
+function DF_dt(M::TensorManifold{field}, X, data; dt, DV = makeCache(M, X, data)) where field
+    return ProductRepr(map((x, y) -> DF_dt_parts(M, X, data, dt = y, ii = x, DV = DV), Tuple(collect(1:length(M.M.manifolds))), dt.parts) )
 end
 
 # these are highly optimised and do not improve with tullio
@@ -927,226 +720,4 @@ function DFT_JFT_JF_DF(M::TensorManifold{field}, DVX::diadicVectors{T}, DVY::dia
         node_XO!(XO, coreX, coreY, coreXY, Xvecs_l, Yvecs_l, Xvecs_r, Yvecs_r)
     end
     return XO
-end
-
-function testTensorLoss()
-    dataIN = rand(4,100)
-    dataOUT = 0.2*rand(4,100)
-    MP = HTTensor([2,2,2,2], 2)
-    MQ = HTTensor([2,2,2,2], 2)
-    MU = HTTensor([4,4,4,4], 2)
-
-    XP = randn(MP)
-    XQ = randn(MQ)
-    XU = randn(MU)
-    @time tensorLoss(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT)
-    @time tensorLoss(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT)
-
-    @time gradP = tensorGradientP(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT, 1)
-    @time gradP = tensorGradientP(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT, 1)
-    
-    # checking straight hessian
-    flag = false
-    dataINp = deepcopy(dataIN)
-    eps = 1e-6
-    hessU = Hessian(MU, XU, dataIN)
-    hessUp = deepcopy(hessU)
-    for k=1:size(dataIN,1)
-        dataINp[k,:] .+= eps
-        hessUp[:,:,k,:] = (Jacobian(MU, XU, dataINp) .- Jacobian(MU, XU, dataIN)) / eps
-        dataINp[k,:] .= dataIN[k,:]
-    end
-    println("Hess diff=", maximum(abs.(hessU .- hessUp)))
-#     display(hessU .- permutedims(hessUp,[1,2,3,4]))
-        
-    # checking P derivatives
-    flag = false
-    XPp = deepcopy(XP)
-    eps = 1e-6
-    for ii=1:nr_nodes(MP)
-        gradP = tensorGradientP(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT, ii)
-        gradPp = deepcopy(gradP)
-        for k1=1:size(XP.parts[ii],1), k2=1:size(XP.parts[ii],2)
-            XPp.parts[ii][k1,k2] += eps
-#             @show gradPp[k1,k2]
-#             @show gradP[k1,k2]
-            gradPp[k1,k2] = (tensorLoss(MP, MQ, MU, XPp, XQ, XU, dataIN, dataOUT) - tensorLoss(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT))/eps
-            relErr = (gradPp[k1,k2] - gradP[k1,k2]) / gradP[k1,k2]
-            if abs(relErr) > 1e-4
-                flag = true
-                println("GP node=", ii, "/", nr_nodes(MP), " el=", k1, ",", k2, "/", size(XP.parts[ii],1), ",", size(XP.parts[ii],2), " E = ", relErr, " G=", gradP[k1,k2], " A=", gradPp[k1,k2])
-            end
-            XPp.parts[ii][k1,k2] = XP.parts[ii][k1,k2]
-        end
-    end
-    
-    # checking Q derivatives
-    flag = false
-    XQp = deepcopy(XQ)
-    eps = 1e-6
-    for ii=1:nr_nodes(MQ)
-        gradQ = tensorGradientQ(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT, ii)
-        gradQp = deepcopy(gradQ)
-        for k1=1:size(XQ.parts[ii],1), k2=1:size(XQ.parts[ii],2)
-            XQp.parts[ii][k1,k2] += eps
-#             @show gradQp[k1,k2]
-#             @show gradQ[k1,k2]
-            gradQp[k1,k2] = (tensorLoss(MP, MQ, MU, XP, XQp, XU, dataIN, dataOUT) - tensorLoss(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT))/eps
-            relErr = (gradQp[k1,k2] - gradQ[k1,k2]) / gradQ[k1,k2]
-            if abs(relErr) > 1e-4
-                flag = true
-                println("GQ node=", ii, "/", nr_nodes(MP), " el=", k1, ",", k2, "/", size(XP.parts[ii],1), ",", size(XP.parts[ii],2), " E = ", relErr, " G=", gradQ[k1,k2], " A=", gradQp[k1,k2])
-            end
-            XQp.parts[ii][k1,k2] = XQ.parts[ii][k1,k2]
-        end
-    end
-    
-    # checking U derivatives
-    flag = false
-    XUp = deepcopy(XU)
-    eps = 1e-6
-    for ii=1:nr_nodes(MU)
-        gradU = tensorGradientU(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT, ii)
-        gradUp = deepcopy(gradU)
-        for k1=1:size(XU.parts[ii],1), k2=1:size(XU.parts[ii],2)
-            XUp.parts[ii][k1,k2] += eps
-#             @show gradUp[k1,k2]
-#             @show gradU[k1,k2]
-            gradUp[k1,k2] = (tensorLoss(MP, MQ, MU, XP, XQ, XUp, dataIN, dataOUT) - tensorLoss(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT))/eps
-            relErr = (gradUp[k1,k2] - gradU[k1,k2]) / gradU[k1,k2]
-            if abs(relErr) > 1e-4
-                flag = true
-                println("GU node=", ii, "/", nr_nodes(MU), " el=", k1, ",", k2, "/", size(XU.parts[ii],1), ",", size(XU.parts[ii],2), " E = ", relErr, " G=", gradU[k1,k2], " A=", gradUp[k1,k2])
-            end
-            XUp.parts[ii][k1,k2] = XU.parts[ii][k1,k2]
-        end
-    end
-
-    # checking P hessians
-    flag = false
-    XPp = deepcopy(XP)
-    eps = 1e-6
-    for ii=1:nr_nodes(MP)
-        gradP, hessP = tensorGradientHessianP(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT, ii)
-        hessPp = deepcopy(hessP)
-#         @show size(XP.parts[ii])
-        for k1=1:size(XP.parts[ii],1), k2=1:size(XP.parts[ii],2)
-            XPp.parts[ii][k1,k2] += eps
-            hessPp[:,:,k1,k2] .= (tensorGradientP(MP, MQ, MU, XPp, XQ, XU, dataIN, dataOUT, ii) .- tensorGradientP(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT, ii))/eps
-            relErr = maximum(abs.((hessPp[:,:,k1,k2] - hessP[:,:,k1,k2]) ./ hessP[:,:,k1,k2]))
-            if abs(relErr) > 1e-4
-                flag = true
-                println("HP node=", ii, "/", nr_nodes(MP), " el=", k1, ",", k2, "/", size(XP.parts[ii],1), ",", size(XP.parts[ii],2), " E = ", relErr, " HP=", maximum(abs.(hessP[:,:,k1,k2])), " A=", maximum(abs.(hessPp[:,:,k1,k2])))
-                println("diff")
-                display(hessPp[:,:,k1,k2] - hessP[:,:,k1,k2])
-                println("analytic")
-                display(hessP[:,:,k1,k2])
-                println("approximate")
-                display(hessPp[:,:,k1,k2])
-            end
-            XPp.parts[ii][k1,k2] = XP.parts[ii][k1,k2]
-        end
-    end
-
-    # checking Q hessians
-    flag = false
-    XQp = deepcopy(XQ)
-    eps = 1e-6
-    for ii=1:nr_nodes(MQ)
-        gradQ, hessQ = tensorGradientHessianQ(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT, ii)
-        hessQp = deepcopy(hessQ)
-#         @show size(XQ.parts[ii])
-        for k1=1:size(XQ.parts[ii],1), k2=1:size(XQ.parts[ii],2)
-            XQp.parts[ii][k1,k2] += eps
-            hessQp[:,:,k1,k2] .= (tensorGradientQ(MP, MQ, MU, XP, XQp, XU, dataIN, dataOUT, ii) .- tensorGradientQ(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT, ii))/eps
-            relErr = maximum(abs.((hessQp[:,:,k1,k2] - hessQ[:,:,k1,k2]) ./ hessQ[:,:,k1,k2]))
-            if abs(relErr) > 1e-4
-                flag = true
-                println("HQ node=", ii, "/", nr_nodes(MQ), " el=", k1, ",", k2, "/", size(XQ.parts[ii],1), ",", size(XQ.parts[ii],2), " E = ", relErr, " HQ=", maximum(abs.(hessQ[:,:,k1,k2])), " A=", maximum(abs.(hessQp[:,:,k1,k2])))
-                println("diff")
-                display(hessQp[:,:,k1,k2] - hessQ[:,:,k1,k2])
-                println("analytic")
-                display(hessQ[:,:,k1,k2])
-                println("approximate")
-                display(hessQp[:,:,k1,k2])
-            end
-            XQp.parts[ii][k1,k2] = XQ.parts[ii][k1,k2]
-        end
-    end
-        
-    # checking U hessians
-    flag = false
-    XUp = deepcopy(XU)
-    eps = 1e-6
-    for ii=1:nr_nodes(MU)
-        gradU, hessU = tensorGradientHessianU(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT, ii)
-        hessUp = deepcopy(hessU)
-#         @show size(XU.parts[ii])
-        for k1=1:size(XU.parts[ii],1), k2=1:size(XU.parts[ii],2)
-            XUp.parts[ii][k1,k2] += eps
-            hessUp[:,:,k1,k2] .= (tensorGradientU(MP, MQ, MU, XP, XQ, XUp, dataIN, dataOUT, ii) .- tensorGradientU(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT, ii))/eps
-            relErr = maximum(abs.((hessUp[:,:,k1,k2] - hessU[:,:,k1,k2]) ./ hessU[:,:,k1,k2]))
-            if abs(relErr) > 1e-4
-                flag = true
-                println("HU node=", ii, "/", nr_nodes(MQ), " leaf = ", is_leaf(MU,ii) , " el=", k1, ",", k2, "/", size(XU.parts[ii],1), ",", size(XU.parts[ii],2), " E = ", relErr, " HU=", maximum(abs.(hessU[:,:,k1,k2])), " A=", maximum(abs.(hessUp[:,:,k1,k2])))
-#                 println("diff")
-#                 display(hessUp[:,:,k1,k2] - hessU[:,:,k1,k2])
-#                 println("analytic")
-#                 display(hessU[:,:,k1,k2])
-#                 println("approximate")
-#                 display(hessUp[:,:,k1,k2])
-            end
-            XUp.parts[ii][k1,k2] = XU.parts[ii][k1,k2]
-        end
-    end
-
-    return nothing
-end
-
-function testTensorMinimize()
-    dataIN = rand(4,10000)
-    dataOUT = rand(4,10000)
-    MP = HTTensor([2,2,2,2], 2)
-    MQ = HTTensor([2,2,2,2], 2)
-    MU = HTTensor([4,4,4,4], 2)
-    XP = randn(MP)
-    XQ = randn(MQ)
-    XU = randn(MU)
-   
-    # we are solving the equation
-    # DL + D2L X = 0
-    # for each component, using the coordinate descent method
-    @show tensorLoss(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT)
-    for k=1:100
-    println("U", k)
-    for ii=2:nr_nodes(MU)
-        G, H = tensorGradientHessianU(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT, ii)
-        delta = reshape(H, size(H,1)*size(H,2), :)\reshape(G,:)
-        XU.parts[ii] .-= reshape(delta, size(G))
-        @show tensorLoss(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT)
-        orthog!(MU, XU)
-        println("orthog")
-        @show tensorLoss(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT)
-    end
-    println("P",k)
-    for ii=1:nr_nodes(MP)
-        G, H = tensorGradientHessianP(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT, ii)
-        delta = reshape(H, size(H,1)*size(H,2), :)\reshape(G,:)
-        XP.parts[ii] .-= reshape(delta, size(G))
-        @show tensorLoss(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT)
-        orthog!(MP, XP)
-        println("orthog")
-        @show tensorLoss(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT)
-    end
-    println("Q",k)
-    for ii=2:nr_nodes(MQ)
-        G, H = tensorGradientHessianQ(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT, ii)
-        delta = reshape(H, size(H,1)*size(H,2), :)\reshape(G,:)
-        XQ.parts[ii] .-= reshape(delta, size(G))
-        @show tensorLoss(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT)
-        orthog!(MQ, XQ)
-        println("orthog")
-        @show tensorLoss(MP, MQ, MU, XP, XQ, XU, dataIN, dataOUT)
-    end
-    end
 end

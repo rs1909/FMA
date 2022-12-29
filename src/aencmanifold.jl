@@ -100,7 +100,7 @@ end
 # end
 # result is in 'p', input is 'q'
 # This is a QR based retraction as nothing else works consistently
-function retract!(M::OAEManifold{ndim, mdim, order, true, field}, p, q, X, method::AbstractRetractionMethod = QRRetraction()) where {ndim, mdim, order, orthogonal, field}
+function retract!(M::OAEManifold{ndim, mdim, order, true, field}, p, q, X, method::AbstractRetractionMethod = QRRetraction()) where {ndim, mdim, order, field}
     q1 = q.parts[1] + X.parts[1]
     q2 = q.parts[2] + X.parts[2]
     # zero-th iteration
@@ -121,7 +121,7 @@ function retract!(M::OAEManifold{ndim, mdim, order, true, field}, p, q, X, metho
     return p
 end
 
-function retract!(M::OAEManifold{ndim, mdim, order, false, field}, p, q, X, method::AbstractRetractionMethod = QRRetraction()) where {ndim, mdim, order, orthogonal, field}
+function retract!(M::OAEManifold{ndim, mdim, order, false, field}, p, q, X, method::AbstractRetractionMethod = QRRetraction()) where {ndim, mdim, order, field}
     q1 = q.parts[1] + X.parts[1]
     q2 = q.parts[2] + X.parts[2]
     # zero-th iteration
@@ -288,25 +288,25 @@ function AENC_Wnlpoint(X)
     return X.parts[2].parts[2]
 end
 
-function AENCLoss(M::AENCManifold{ndim, mdim, Worder, Sorder, true, field}, X, dataIN, dataOUT) where {ndim, mdim, Worder, Sorder, orthogonal, field}
+function AENCLoss(M::AENCManifold{ndim, mdim, Worder, Sorder, true, field}, X, dataIN, dataOUT) where {ndim, mdim, Worder, Sorder, field}
     datalen = size(dataIN,2)
     scale = AmplitudeScaling(dataIN, zeros(size(dataIN,1)))
     #  Wl * S( U * x ) + Wnl( S( U * x ) ) - y according to the commutative diagram
-    Ux = Eval(AENC_U(M), AENC_Upoint(X), [dataIN])
-    SUx = Eval(AENC_S(M), AENC_Spoint(X), [Ux])
-    WSUx = Eval(AENC_Wl(M), AENC_Wlpoint(X), [SUx]) + Eval(AENC_Wnl(M), AENC_Wnlpoint(X), [SUx])
+    Ux = Eval(AENC_U(M), AENC_Upoint(X), dataIN)
+    SUx = Eval(AENC_S(M), AENC_Spoint(X), Ux)
+    WSUx = Eval(AENC_Wl(M), AENC_Wlpoint(X), SUx) + Eval(AENC_Wnl(M), AENC_Wnlpoint(X), SUx)
     L0 = WSUx .- dataOUT
     return sum( (L0 .^ 2) ./ scale )/2/datalen
 end
 
-function AENCGradient(M::AENCManifold{ndim, mdim, Worder, Sorder, true, field}, X, dataIN, dataOUT) where {ndim, mdim, Worder, Sorder, orthogonal, field}
+function AENCGradient(M::AENCManifold{ndim, mdim, Worder, Sorder, true, field}, X, dataIN, dataOUT) where {ndim, mdim, Worder, Sorder, field}
     datalen = size(dataIN,2)
     scale = AmplitudeScaling(dataIN, zeros(size(dataIN,1)))
     # Wl * S( U * x ) + Wnl( S( U * x ) ) - y according to the commutative diagram
     # and U = Wl^T
-    Ux = Eval(AENC_U(M), AENC_Upoint(X), [dataIN])
-    SUx = Eval(AENC_S(M), AENC_Spoint(X), [Ux])
-    WSUx = Eval(AENC_Wl(M), AENC_Wlpoint(X), [SUx]) + Eval(AENC_Wnl(M), AENC_Wnlpoint(X), [SUx])
+    Ux = Eval(AENC_U(M), AENC_Upoint(X), dataIN)
+    SUx = Eval(AENC_S(M), AENC_Spoint(X), Ux)
+    WSUx = Eval(AENC_Wl(M), AENC_Wlpoint(X), SUx) + Eval(AENC_Wnl(M), AENC_Wnlpoint(X), SUx)
     L0 = (WSUx .- dataOUT) ./ scale / datalen
     # need to apply the chain rule
     # Wl:  L0 _*_ D Wl * S( U * x )
@@ -320,32 +320,32 @@ function AENCGradient(M::AENCManifold{ndim, mdim, Worder, Sorder, true, field}, 
     L0_JWSUx_JSUx = @views [dot(L0[:,p]' * JWSUx[:,:,p], JSUx[:,j,p]) for j=1:size(JSUx,2), p=1:size(JSUx,3)]
     L0_JWSUx = @views [dot(L0[:,p], JWSUx[:,j,p]) for j=1:size(JWSUx,2), p=1:size(JWSUx,3)] #dropdims(sum(JWSUx .* reshape(L0, size(L0,1), 1, size(L0,2)), dims=1), dims=1)
     # W
-    Wl = L0_DF(AENC_Wl(M), AENC_Wlpoint(X), nothing, SUx, L0, nothing)
-    Wnl = L0_DF(AENC_Wnl(M), AENC_Wnlpoint(X), nothing, SUx, L0, nothing)
-    S = L0_DF(AENC_S(M), AENC_Spoint(X), nothing, Ux, L0_JWSUx, nothing)
-    U = L0_DF(AENC_U(M), AENC_Upoint(X), nothing, dataIN, L0_JWSUx_JSUx, nothing)
+    Wl = L0_DF(AENC_Wl(M), AENC_Wlpoint(X), SUx, L0 = L0)
+    Wnl = L0_DF(AENC_Wnl(M), AENC_Wnlpoint(X), SUx, L0 = L0)
+    S = L0_DF(AENC_S(M), AENC_Spoint(X), Ux, L0 = L0_JWSUx)
+    U = L0_DF(AENC_U(M), AENC_Upoint(X), dataIN, L0 = L0_JWSUx_JSUx)
     return ProductRepr(S, ProductRepr(Wl + U, Wnl))
 end
 
-function AENCLoss(M::AENCManifold{ndim, mdim, Worder, Sorder, false, field}, X, dataIN, dataOUT) where {ndim, mdim, Worder, Sorder, orthogonal, field}
+function AENCLoss(M::AENCManifold{ndim, mdim, Worder, Sorder, false, field}, X, dataIN, dataOUT) where {ndim, mdim, Worder, Sorder, field}
     datalen = size(dataIN,2)
     scale = AmplitudeScaling(dataIN, zeros(size(dataIN,1)))
     #  Wnl( S( U * x ) ) - y according to the commutative diagram
-    Ux = Eval(AENC_U(M), AENC_Upoint(X), [dataIN])
-    SUx = Eval(AENC_S(M), AENC_Spoint(X), [Ux])
-    WSUx = Eval(AENC_Wnl(M), AENC_Wnlpoint(X), [SUx])
+    Ux = Eval(AENC_U(M), AENC_Upoint(X), dataIN)
+    SUx = Eval(AENC_S(M), AENC_Spoint(X), Ux)
+    WSUx = Eval(AENC_Wnl(M), AENC_Wnlpoint(X), SUx)
     L0 = WSUx .- dataOUT
     return sum( (L0 .^ 2) ./ scale )/2/datalen
 end
 
-function AENCGradient(M::AENCManifold{ndim, mdim, Worder, Sorder, false, field}, X, dataIN, dataOUT) where {ndim, mdim, Worder, Sorder, orthogonal, field}
+function AENCGradient(M::AENCManifold{ndim, mdim, Worder, Sorder, false, field}, X, dataIN, dataOUT) where {ndim, mdim, Worder, Sorder, field}
     datalen = size(dataIN,2)
     scale = AmplitudeScaling(dataIN, zeros(size(dataIN,1)))
     # Wnl( S( U * x ) ) - y according to the commutative diagram
     # and U = Wl^T
-    Ux = Eval(AENC_U(M), AENC_Upoint(X), [dataIN])
-    SUx = Eval(AENC_S(M), AENC_Spoint(X), [Ux])
-    WSUx = Eval(AENC_Wnl(M), AENC_Wnlpoint(X), [SUx])
+    Ux = Eval(AENC_U(M), AENC_Upoint(X), dataIN)
+    SUx = Eval(AENC_S(M), AENC_Spoint(X), Ux)
+    WSUx = Eval(AENC_Wnl(M), AENC_Wnlpoint(X), SUx)
     L0 = (WSUx .- dataOUT) ./ scale / datalen
     # need to apply the chain rule
     # Wl:  L0 _*_ D Wl * S( U * x )
@@ -359,9 +359,9 @@ function AENCGradient(M::AENCManifold{ndim, mdim, Worder, Sorder, false, field},
     L0_JWSUx_JSUx = @views [dot(L0[:,p]' * JWSUx[:,:,p], JSUx[:,j,p]) for j=1:size(JSUx,2), p=1:size(JSUx,3)]
     L0_JWSUx = @views [dot(L0[:,p], JWSUx[:,j,p]) for j=1:size(JWSUx,2), p=1:size(JWSUx,3)] #dropdims(sum(JWSUx .* reshape(L0, size(L0,1), 1, size(L0,2)), dims=1), dims=1)
     # W
-    Wnl = L0_DF(AENC_Wnl(M), AENC_Wnlpoint(X), nothing, SUx, L0, nothing)
-    S = L0_DF(AENC_S(M), AENC_Spoint(X), nothing, Ux, L0_JWSUx, nothing)
-    U = L0_DF(AENC_U(M), AENC_Upoint(X), nothing, dataIN, L0_JWSUx_JSUx, nothing)
+    Wnl = L0_DF(AENC_Wnl(M), AENC_Wnlpoint(X), SUx, L0 = L0)
+    S = L0_DF(AENC_S(M), AENC_Spoint(X), Ux, L0 = L0_JWSUx)
+    U = L0_DF(AENC_U(M), AENC_Upoint(X), dataIN, L0 = L0_JWSUx_JSUx)
     return ProductRepr(S, ProductRepr(U, Wnl))
 end
 
@@ -370,9 +370,9 @@ function AENCROMLoss(M::AENCManifold{ndim, mdim, Worder, Sorder, orthogonal, fie
     datalen = size(dataIN,2)
     scale = AmplitudeScaling(dataIN, zeros(size(dataIN,1)))
     #  S( U * x ) - U * y
-    Ux = Eval(AENC_U(M), AENC_Upoint(X), [dataIN])
-    Uy = Eval(AENC_U(M), AENC_Upoint(X), [dataOUT])
-    SUx = Eval(AENC_S(M), AENC_Spoint(X), [Ux])
+    Ux = Eval(AENC_U(M), AENC_Upoint(X), dataIN)
+    Uy = Eval(AENC_U(M), AENC_Upoint(X), dataOUT)
+    SUx = Eval(AENC_S(M), AENC_Spoint(X), Ux)
     L0 = SUx .- Uy
     return sum( (L0 .^ 2) ./ scale )/2/datalen
 end
@@ -382,33 +382,33 @@ function AENCROMGradient(M::AENCManifold{ndim, mdim, Worder, Sorder, orthogonal,
     datalen = size(dataIN,2)
     scale = AmplitudeScaling(dataIN, zeros(size(dataIN,1)))
     #  S( U * x ) - U * y
-    Ux = Eval(AENC_U(M), AENC_Upoint(X), [dataIN])
-    Uy = Eval(AENC_U(M), AENC_Upoint(X), [dataOUT])
-    SUx = Eval(AENC_S(M), AENC_Spoint(X), [Ux])
+    Ux = Eval(AENC_U(M), AENC_Upoint(X), dataIN)
+    Uy = Eval(AENC_U(M), AENC_Upoint(X), dataOUT)
+    SUx = Eval(AENC_S(M), AENC_Spoint(X), Ux)
     L0 = (SUx .- Uy) ./ scale / datalen
     # need to apply the chain rule
-    S = L0_DF(AENC_S(M), AENC_Spoint(X), nothing, Ux, L0, nothing)
+    S = L0_DF(AENC_S(M), AENC_Spoint(X), Ux, L0 = L0)
     return ProductRepr(S, ProductRepr(zero(AENC_Upoint(X)), zero(AENC_Wnlpoint(X))))
 end
 
 # ORTHOGONAL!
-function AENCFitLoss(M::AENCManifold{ndim, mdim, Worder, Sorder, true, field}, X, data) where {ndim, mdim, Worder, Sorder, orthogonal, field}
+function AENCFitLoss(M::AENCManifold{ndim, mdim, Worder, Sorder, true, field}, X, data) where {ndim, mdim, Worder, Sorder, field}
     datalen = size(data,2)
     scale = AmplitudeScaling(data, zeros(size(data,1)))
     #  Wl * U * x + Wnl( U * x ) - y according to the commutative diagram
-    Ux = Eval(AENC_U(M), AENC_Upoint(X), [data])
-    WUx = Eval(AENC_Wl(M), AENC_Wlpoint(X), [Ux]) + Eval(AENC_Wnl(M), AENC_Wnlpoint(X), [Ux])
+    Ux = Eval(AENC_U(M), AENC_Upoint(X), data)
+    WUx = Eval(AENC_Wl(M), AENC_Wlpoint(X), Ux) + Eval(AENC_Wnl(M), AENC_Wnlpoint(X), Ux)
     L0 = WUx .- data
     return sum( (L0 .^ 2) ./ scale )/2/datalen
 end
 
 # ORTHOGONAL!
-function AENCFitGradient(M::AENCManifold{ndim, mdim, Worder, Sorder, true, field}, X, data) where {ndim, mdim, Worder, Sorder, orthogonal, field}
+function AENCFitGradient(M::AENCManifold{ndim, mdim, Worder, Sorder, true, field}, X, data) where {ndim, mdim, Worder, Sorder, field}
     datalen = size(data,2)
     scale = AmplitudeScaling(data, zeros(size(data,1)))
     #  Wl * U * x + Wnl( U * x ) - y according to the commutative diagram
-    Ux = Eval(AENC_U(M), AENC_Upoint(X), [data])
-    WUx = Eval(AENC_Wl(M), AENC_Wlpoint(X), [Ux]) + Eval(AENC_Wnl(M), AENC_Wnlpoint(X), [Ux])
+    Ux = Eval(AENC_U(M), AENC_Upoint(X), data)
+    WUx = Eval(AENC_Wl(M), AENC_Wlpoint(X), Ux) + Eval(AENC_Wnl(M), AENC_Wnlpoint(X), Ux)
     L0 = (WUx .- data) ./ scale / datalen
     # need to apply the chain rule
     # Wl:  L0 _*_ D Wl * S( U * x )
@@ -420,29 +420,29 @@ function AENCFitGradient(M::AENCManifold{ndim, mdim, Worder, Sorder, true, field
     # J S( U * x )
     L0_JWUx = @views [dot(L0[:,p], JWUx[:,j,p]) for j=1:size(JWUx,2), p=1:size(JWUx,3)] #dropdims(sum(JWSUx .* reshape(L0, size(L0,1), 1, size(L0,2)), dims=1), dims=1)
     # W
-    Wl = L0_DF(AENC_Wl(M), AENC_Wlpoint(X), nothing, Ux, L0, nothing)
-    Wnl = L0_DF(AENC_Wnl(M), AENC_Wnlpoint(X), nothing, Ux, L0, nothing)
-    U = L0_DF(AENC_U(M), AENC_Upoint(X), nothing, data, L0_JWUx, nothing)
+    Wl = L0_DF(AENC_Wl(M), AENC_Wlpoint(X), Ux, L0 = L0)
+    Wnl = L0_DF(AENC_Wnl(M), AENC_Wnlpoint(X), Ux, L0 = L0)
+    U = L0_DF(AENC_U(M), AENC_Upoint(X), data, L0 = L0_JWUx)
     return ProductRepr(zero(AENC_Spoint(X)), ProductRepr(Wl + U, Wnl))
 
 end
 
-function AENCFitLoss(M::AENCManifold{ndim, mdim, Worder, Sorder, false, field}, X, data) where {ndim, mdim, Worder, Sorder, orthogonal, field}
+function AENCFitLoss(M::AENCManifold{ndim, mdim, Worder, Sorder, false, field}, X, data) where {ndim, mdim, Worder, Sorder, field}
     datalen = size(data,2)
     scale = AmplitudeScaling(data, zeros(size(data,1)))
     #  Wnl(U * x) - x
-    Ux = Eval(AENC_U(M), AENC_Upoint(X), [data])
-    WUx = Eval(AENC_Wnl(M), AENC_Wnlpoint(X), [Ux])
+    Ux = Eval(AENC_U(M), AENC_Upoint(X), data)
+    WUx = Eval(AENC_Wnl(M), AENC_Wnlpoint(X), Ux)
     L0 = WUx .- data
     return sum( (L0 .^ 2) ./ scale )/2/datalen
 end
 
-function AENCFitGradient(M::AENCManifold{ndim, mdim, Worder, Sorder, false, field}, X, data) where {ndim, mdim, Worder, Sorder, orthogonal, field}
+function AENCFitGradient(M::AENCManifold{ndim, mdim, Worder, Sorder, false, field}, X, data) where {ndim, mdim, Worder, Sorder, field}
     datalen = size(data,2)
     scale = AmplitudeScaling(data, zeros(size(data,1)))
     #  Wnl(U * x) - x
-    Ux = Eval(AENC_U(M), AENC_Upoint(X), [data])
-    WUx = Eval(AENC_Wnl(M), AENC_Wnlpoint(X), [Ux])
+    Ux = Eval(AENC_U(M), AENC_Upoint(X), data)
+    WUx = Eval(AENC_Wnl(M), AENC_Wnlpoint(X), Ux)
     L0 = (WUx .- data) ./ scale / datalen
     # need to apply the chain rule
     # Wnl: L0 _*_ D Wnl( U )
@@ -451,8 +451,8 @@ function AENCFitGradient(M::AENCManifold{ndim, mdim, Worder, Sorder, false, fiel
     # J S( U * x )
     L0_JWUx = @views [dot(L0[:,p], JWUx[:,j,p]) for j=1:size(JWUx,2), p=1:size(JWUx,3)] #dropdims(sum(JWSUx .* reshape(L0, size(L0,1), 1, size(L0,2)), dims=1), dims=1)
     # W
-    Wnl = L0_DF(AENC_Wnl(M), AENC_Wnlpoint(X), nothing, Ux, L0, nothing)
-    U = L0_DF(AENC_U(M), AENC_Upoint(X), nothing, data, L0_JWUx, nothing)
+    Wnl = L0_DF(AENC_Wnl(M), AENC_Wnlpoint(X), Ux, L0 = L0)
+    U = L0_DF(AENC_U(M), AENC_Upoint(X), data, L0 = L0_JWUx)
     return ProductRepr(zero(AENC_Spoint(X)), ProductRepr(U, Wnl))
 end
 

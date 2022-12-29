@@ -73,23 +73,32 @@ end
 
 Create a representation of a zero polynomial with manifold structure `M`.
 """
-function zero(M::DensePolyManifold{ndim, n, order, identity, ℝ}) where {ndim, n, order, identity, field}
+function zero(M::DensePolyManifold{ndim, n, order, identity, ℝ}) where {ndim, n, order, identity}
     return zeros(n, length(M.admissible))
 end
 
-function zero(M::DensePolyManifold{ndim, n, order, identity, ℂ}) where {ndim, n, order, identity, field}
+function zero(M::DensePolyManifold{ndim, n, order, identity, ℂ}) where {ndim, n, order, identity}
     return zeros(ComplexF64, n, length(M.admissible))
 end
 
-function zeroJacobianSquared(M::DensePolyManifold{ndim, n, order, identity, ℝ}) where {ndim, n, order, identity, field}
+# take into account mexpALL monomials
+function zeroALL(M::DensePolyManifold{ndim, n, order, identity, ℝ}) where {ndim, n, order, identity}
+    return zeros(n, size(M.mexpALL,2))
+end
+
+function zeroALL(M::DensePolyManifold{ndim, n, order, identity, ℂ}) where {ndim, n, order, identity}
+    return zeros(ComplexF64, n, size(M.mexpALL,2))
+end
+
+function zeroJacobianSquared(M::DensePolyManifold{ndim, n, order, identity, ℝ}) where {ndim, n, order, identity}
     return zeros(ndim, ndim, length(M.admissible))
 end
 
-function randn(M::DensePolyManifold{ndim, n, order, identity, ℝ}) where {ndim, n, order, identity, field}
+function randn(M::DensePolyManifold{ndim, n, order, identity, ℝ}) where {ndim, n, order, identity}
     return randn(n, length(M.admissible))
 end
 
-function randn(M::DensePolyManifold{ndim, n, order, identity, ℂ}) where {ndim, n, order, identity, field}
+function randn(M::DensePolyManifold{ndim, n, order, identity, ℂ}) where {ndim, n, order, identity}
     return randn(ComplexF64, n, length(M.admissible))
 end
 
@@ -122,11 +131,11 @@ function LinearDensePolynomial(A::AbstractArray{Complex{T},2}) where T
     return M, X
 end
 
-function zero_tangent(M::DensePolyManifold{ndim, n, order, identity, ManifoldsBase.RealNumbers}) where {ndim, n, order, identity, field}
+function zero_tangent(M::DensePolyManifold{ndim, n, order, identity, ManifoldsBase.RealNumbers}) where {ndim, n, order, identity}
     return zeros(n, length(M.admissible))
 end
 
-function zero_tangent(M::DensePolyManifold{ndim, n, order, identity, ManifoldsBase.ComplexNumbers}) where {ndim, n, order, identity, field}
+function zero_tangent(M::DensePolyManifold{ndim, n, order, identity, ManifoldsBase.ComplexNumbers}) where {ndim, n, order, identity}
     return zeros(ComplexF64, n, length(M.admissible))
 end
 
@@ -143,10 +152,19 @@ function inner(M::DensePolyManifold{ndim, n, order, identity, field}, p, X, Y) w
 end
 
 function toFullDensePolynomial(M::DensePolyManifold{ndim, n, order, identity, field}, X) where {ndim, n, order, identity, field}
-    Mnew = DensePolyManifold(ndim, n, order; min_order = 0, field = field)
+    admissible = 1:size(M.mexpALL,2)
+    Mnew = DensePolyManifold{ndim, n, order, false, field}(M.mexpALL, M.mexpALL, admissible, Euclidean(n, length(admissible); field = field), ExponentialRetraction(), ParallelTransport())
     Xnew = zero(Mnew)
     for k=1:size(M.mexp,2)
         Xnew[:,PolyFindIndex(M.mexp, Mnew.mexp[:,k])] .= X[:,k]
+    end
+    # putting the identity back if necessary
+    if identity
+        linid = findall(isequal(1), dropdims(sum(M.mexp,dims=1),dims=1))
+        for k=1:length(linid)
+            @views id = findfirst(isequal(1), M.mexp[:,linid[k]])
+            X[k,linid[k]] += one(eltype(Xnew))
+        end
     end
     return Mnew, Xnew
 end
@@ -214,23 +232,23 @@ function DenseMonomialsALL(M::DensePolyManifold{ndim, n, order, identity, field}
     return dropdims(prod(zp, dims=1), dims=1)
 end
 
-function Eval(M::DensePolyManifold{ndim, n, order, false, field}, X, data, L0 = nothing) where {ndim, n, order, field}
+function Eval(M::DensePolyManifold{ndim, n, order, false, field}, X, data; L0 = nothing, DV=nothing) where {ndim, n, order, field}
     # only use admissible monomials
     if L0 == nothing
-        return X * DenseMonomials(M, data[1])
+        return X * DenseMonomials(M, data)
     else
-        return sum(L0 .* (X * DenseMonomials(M, data[1])))
+        return sum(L0 .* (X * DenseMonomials(M, data)))
     end
     nothing
 end
 
 # with identity added
-function Eval(M::DensePolyManifold{ndim, n, order, true, field}, X, data, L0 = nothing) where {ndim, n, order, field}
+function Eval(M::DensePolyManifold{ndim, n, order, true, field}, X, data; L0 = nothing, DV=nothing) where {ndim, n, order, field}
     # only use admissible monomials
     if L0 == nothing
-        return X * DenseMonomials(M, data[1]) .+ data[1]
+        return X * DenseMonomials(M, data) .+ data
     else
-        return sum(L0 .* (X * DenseMonomials(M, data[1]) .+ data[1]))
+        return sum(L0 .* (X * DenseMonomials(M, data) .+ data))
     end
     nothing
 end
@@ -493,7 +511,7 @@ end
 # FOR OPTIMISATION
 #-------------------------------------------------
 
-function Jacobian(M::DensePolyManifold{ndim, n, order, false, field}, X, data) where {ndim, n, order, identity, field}
+function Jacobian(M::DensePolyManifold{ndim, n, order, false, field}, X, data) where {ndim, n, order, field}
     DM = DensePolyDeriMatrices(M, M)
     mon = DenseMonomialsALL(M, data)
     res = zeros(size(X,1), length(DM), size(mon,2))
@@ -505,7 +523,7 @@ function Jacobian(M::DensePolyManifold{ndim, n, order, false, field}, X, data) w
 end
 
 # with identity added
-function Jacobian(M::DensePolyManifold{ndim, n, order, true, field}, X, data) where {ndim, n, order, identity, field}
+function Jacobian(M::DensePolyManifold{ndim, n, order, true, field}, X, data) where {ndim, n, order, field}
     DM = DensePolyDeriMatrices(M, M)
     mon = DenseMonomialsALL(M, data)
     res = zeros(size(X,1), length(DM), size(mon,2))
@@ -531,13 +549,65 @@ function Hessian(M::DensePolyManifold{ndim, n, order, identity, field}, X, data)
     return hess
 end
 
+# derivatives of the combination
+# L0  = P1 o Up o x - P2 o Up o y
+# L   = L0^T L0
+# L   = (P1 o Up o x)^T (P1 o Up o x) + (P2 o Up o y)^T (P2 o Up o y) - 2*(P1 o Up o x)^T (P2 o Up o y)
+# dL  = 2 (P1 o Up o x)^T (DP1 o Up o x) dUp o x + 2 (P2 o Up o y)^T (DP2 o Up o y) dUp o y - 2 (P1 o Up o x)^T (DP2 o Up o y) dUp o y - 2 (P2 o Up o y)^T (DP1 o Up o x) dUp o x
+# dL  = 2 [(P1 o Up o x)^T (DP1 o Up o x) - (P2 o Up o y)^T (DP1 o Up o x)] dUp o x
+#      +2 [(P2 o Up o y)^T (DP2 o Up o y) - (P1 o Up o x)^T (DP2 o Up o y)] dUp o y
+# d2L = 2 [(P1 o Up o x)^T (D2P1 o Up o x) dUp o x + (DP1 o Up o x . dUp o x)^T (DP1 o Up o x) - (P2 o Up o y)^T (D2P1 o Up o x) dUp o x - (DP2 o Up o y . dUp o y)^T (DP1 o Up o x)] dUp o x
+#      +2 [(P2 o Up o y)^T (D2P2 o Up o y) dUp o y + (DP2 o Up o y . dUp o y)^T (DP2 o Up o y) - (P1 o Up o x)^T (D2P2 o Up o y) dUp o y - (DP1 o Up o x . dUp o x)^T (DP2 o Up o y)] dUp o y
+# d2L = 2 [(P1 o Up o x)^T (D2P1 o Up o x) + (DP1 o Up o x)^T (DP1 o Up o x) - (P2 o Up o y)^T (D2P1 o Up o x)]{dUp o x, dUp o x}
+#      +2 [(P2 o Up o y)^T (D2P2 o Up o y) + (DP2 o Up o y)^T (DP2 o Up o y) - (P1 o Up o x)^T (D2P2 o Up o y)]{dUp o y, dUp o y}
+#      -4 [(DP1 o Up o x)^T (DP2 o Up o y)] {dUp o x, dUp o y}
+# what to return:
+# [(P1 o Up o x)^T (D2P1 o Up o x) + (DP1 o Up o x)^T (DP1 o Up o x) - (P2 o Up o y)^T (D2P1 o Up o x)] = F1F1_D2D2 + F1F1_D1D2 - F2F1_D2D2 
+#                                                                                                       = F1F1_D2D2 + F1F1_D1D2 - F1F2_D1D1
+# [(P2 o Up o y)^T (D2P2 o Up o y) + (DP2 o Up o y)^T (DP2 o Up o y) - (P1 o Up o x)^T (D2P2 o Up o y)] = F2F2_D2D2 + F2F2_D1D2 - F1F2_D2D2
+# - 2 [(DP1 o Up o x)^T (DP2 o Up o y)]                                                                 = -2 F1F2_D1D2
+function HessianCombination(M1::DensePolyManifold{ndim, n, order1, identity1, field}, X1, M2::DensePolyManifold{ndim, n, order2, identity2, field}, X2, data1, data2) where {ndim, n, order1, identity1, order2, identity2, field}
+    M1f, X1f = toFullDensePolynomial(M1, X1)
+    M2f, X2f = toFullDensePolynomial(M2, X2)
+    
+    X1X1 = transpose(X1f) * X1f
+    X2X2 = transpose(X2f) * X2f
+    X1X2 = transpose(X1f) * X2f
+
+    DM1 = DensePolyDeriMatrices(M1f, M1f)
+    DM2 = DensePolyDeriMatrices(M2f, M2f)
+    mon1 = DenseMonomialsALL(M1, data1)
+    mon2 = DenseMonomialsALL(M2, data2)
+    H11 = zeros(eltype(X1X1), ndim, ndim, size(data1,2))
+    H22 = zeros(eltype(X2X2), ndim, ndim, size(data2,2))
+    H12 = zeros(eltype(X2X2), ndim, ndim, size(data1,2))
+    @show size(mon1), size(mon2), size(X1X1), size(X2X2), size(X1X2)
+    for k=1:length(DM1), l=1:length(DM1)
+#         F1F1_D2D2[l,k,:] = transpose(mon1) * X1X1 * (DM1[l]*DM1[k] * mon1)
+#         F1F1_D1D2[l,k,:] = transpose(DM1[l] * mon1) * X1X1 * (DM1[k] * mon1)
+#         F1F2_D1D1[l,k,:] = transpose(DM1[l]*DM1[k] * mon1) * X1X2 * mon2
+        H11[k,l,:] .= dropdims(sum(mon1 .* (X1X1 * (DM1[l]*DM1[k] * mon1)), dims=1) .+ sum((DM1[l] * mon1) .* (X1X1 * (DM1[k] * mon1)),dims=1) .- sum((DM1[l]*DM1[k] * mon1) .* (X1X2 * mon2),dims=1),dims=1)
+    end
+    for k=1:length(DM2), l=1:length(DM2)
+#         F2F2_D2D2[l,k,:] = transpose(mon2) * X2X2 * (DM2[l]*DM2[k] * mon2)
+#         F2F2_D1D2[l,k,:] = transpose(DM2[l] * mon2) * X2X2 * (DM2[k] * mon2)
+#         F1F2_D2D2[l,k,:] = transpose(mon1) * X1X2 * (DM2[l]*DM2[k] * mon2)
+        H22[k,l,:] .= dropdims(sum(mon2 .* (X2X2 * (DM2[l]*DM2[k] * mon2)),dims=1) .+ sum((DM2[l] * mon2) .* (X2X2 * (DM2[k] * mon2)),dims=1) .- sum(mon1 .* (X1X2 * (DM2[l]*DM2[k] * mon2)),dims=1),dims=1)
+    end
+    for k=1:length(DM1), l=1:length(DM2)
+#         F1F2_D1D2[l,k,:] = transpose(DM1[l] * mon1) * X1X2 * (DM2[k] * mon2)
+        H12[k,l,:] .= -2 * dropdims(sum((DM1[k] * mon1) .* (X1X2 * (DM2[l] * mon2)),dims=1),dims=1)
+    end
+    return H11, H22, H12
+end
+
 # With respect to the parameters
-function L0_DF(M::DensePolyManifold{ndim, n, order, identity, field}, X, DV, data, L0, ii) where {ndim, n, order, identity, field}
+function L0_DF(M::DensePolyManifold{ndim, n, order, identity, field}, X, data; L0, ii = 0, DV = nothing) where {ndim, n, order, identity, field}
     mon = DenseMonomials(M, data)
     return dropdims(sum(reshape(L0,size(L0,1),1,size(L0,2)) .* reshape(mon, 1, size(mon,1), size(mon,2)), dims=3), dims=3)
 end
 
-function JF_dx(M::DensePolyManifold{ndim, n, order, false, field}, X, data, dx) where {ndim, n, order, identity, field}
+function JF_dx(M::DensePolyManifold{ndim, n, order, false, field}, X, data, dx) where {ndim, n, order, field}
     DM = DensePolyDeriMatrices(M, M) # reshuffles the monomials and multiplies with the right constant
     mon = DenseMonomialsALL(M, data)
     res = zeros(size(X,1), size(mon,2))
@@ -548,7 +618,7 @@ function JF_dx(M::DensePolyManifold{ndim, n, order, false, field}, X, data, dx) 
 end
 
 # with identity added
-function JF_dx(M::DensePolyManifold{ndim, n, order, true, field}, X, data, dx) where {ndim, n, order, identity, field}
+function JF_dx(M::DensePolyManifold{ndim, n, order, true, field}, X, data, dx) where {ndim, n, order, field}
     DM = DensePolyDeriMatrices(M, M)
     mon = DenseMonomialsALL(M, data)
     res = zeros(size(X,1), size(mon,2))
@@ -580,7 +650,7 @@ function XO_mon_mon!(XO, mon, scale)
     nothing
 end
 
-function DFoxT_DFox(M::DensePolyManifold{ndim, n, order, identity, field}, X, data, ii; scale = alwaysone()) where {ndim, n, order, identity, field}
+function DFoxT_DFox(M::DensePolyManifold{ndim, n, order, identity, field}, X, data; scale = alwaysone()) where {ndim, n, order, identity, field}
     XO = zeros(n, size(M.mexp,2), n, size(M.mexp,2))
     mon = DenseMonomials(M, data)
 #     @time for q=1:min(ndim,n), l=1:size(data,2), p1=1:size(M.mexp,2), p2=1:size(M.mexp,2)
