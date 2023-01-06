@@ -173,7 +173,9 @@ function frequencyEmbed(zs, Tstep, freqs; period = 1)
     dataOUTor = zeros(size(tab,1), len)
     errIN =  zeros(len)
     errOUT = zeros(len)
+    ids = zeros(Int, length(zs)+1)
     p=1
+    ids[1] = p
     for k=1:length(zs)
         for q=1:skip:(length(zs[k])-skip-(2*window+1)+1)
             dataINor[:,p] .= tab*zs[k][(q+(2*window+1)-1):-1:q]
@@ -182,13 +184,14 @@ function frequencyEmbed(zs, Tstep, freqs; period = 1)
             errOUT[p] = abs.(embedscales * dataOUTor[:,p] .- zs[k][q+skip+(2*window+1-delay)])[1]
             p += 1
         end
+        ids[k+1] = p
     end
 #         @show abs.(embedscales*tab) .> 1e-6
 #         @show findall(abs.(embedscales*tab) .> 1e-6)
     println("frequencyEmbed relative reproduction error = ", maximum(errIN./vec(sqrt.(sum(dataINor .^ 2,dims=1)))), ", ", maximum(errOUT./vec(sqrt.(sum(dataOUTor .^ 2,dims=1)))))
 
 #         @show sum(embedscales' * tab, dims=1)
-    return dataINor, dataOUTor, Tstep*skip, embedscales
+return dataINor, dataOUTor, Tstep*skip, embedscales, ids
 end
     
 # the output is

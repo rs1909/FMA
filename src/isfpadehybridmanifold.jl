@@ -301,7 +301,7 @@ function ISFPadeLossHistogram(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uor
     PoUox = Eval(PadeP(M), PadePpoint(X), Uox)
     L0 = QoUoy .- PoUox
     
-    return vec(sum(Uox .^ 2,dims=1)), vec(sqrt.( sum(L0 .^ 2,dims=1) ./ sum(Uox .^ 2,dims=1) ))
+    return vec(sqrt.(sum(Uox .^ 2,dims=1))), vec(sqrt.( sum(L0 .^ 2,dims=1) ./ sum(Uox .^ 2,dims=1) ))
 end
 
 function ISFPadeGradientP(M::ISFPadeManifold{mdim, ndim, Porder, Qorder, Uorder, field}, X, dataIN, dataOUT; DV=makeCache(M, X, dataIN, dataOUT)) where {mdim, ndim, Porder, Qorder, Uorder, field}

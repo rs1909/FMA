@@ -382,7 +382,9 @@ function tensorVecsRecursive!(DV::diadicVectors{T}, M::TensorManifold{field}, X,
         else
             wdim = dim
         end
-        DV.vecs[ii] = zeros(T, size(B,2), 1, size(data[1],2) ) # Array{T}(undef, (size(B,2), 1, size(data[1],2)))
+        if ~isassigned(DV.vecs, ii)
+            DV.vecs[ii] = zeros(T, size(B,2), 1, size(data[1],2) ) # Array{T}(undef, (size(B,2), 1, size(data[1],2)))
+        end
 #             @show size(DV.vecs[ii]), size(B), size(data[wdim])
         BmulData!(DV.vecs[ii], B, data[wdim])
     else
@@ -394,7 +396,9 @@ function tensorVecsRecursive!(DV::diadicVectors{T}, M::TensorManifold{field}, X,
         vs_l = size(DV.vecs[ii_left], 2)
         vs_r = size(DV.vecs[ii_right], 2)
         vs = max(vs_l,vs_r)
-        DV.vecs[ii] = zeros( size(B,2), vs, size(data[1],2) )
+        if ~isassigned(DV.vecs, ii)
+            DV.vecs[ii] = zeros( size(B,2), vs, size(data[1],2) )
+        end
         
         LmulBmulR!(DV.vecs[ii], DV.vecs[ii_left], B, DV.vecs[ii_right])
     end
@@ -477,7 +481,9 @@ function tensorBVecsIndexed!(DV::diadicVectors{T}, M::TensorManifold{field}, X; 
             s_r = size(X.parts[M.children[parent,2]],2)
             sibling = M.children[left,2] # right sibling
             tensorBVecsIndexed!(DV, M, X, ii = parent)
-            DV.bvecs[ii] = zeros(T, size(DV.bvecs[parent],1), s_l, datalen)
+            if ~isassigned(DV.bvecs, ii)
+                DV.bvecs[ii] = zeros(T, size(DV.bvecs[parent],1), s_l, datalen)
+            end
             BVpmulBmulV!(DV.bvecs[ii], B, DV.vecs[sibling], DV.bvecs[parent])
         end
         if right != nothing
@@ -490,7 +496,9 @@ function tensorBVecsIndexed!(DV::diadicVectors{T}, M::TensorManifold{field}, X; 
             sibling = M.children[right,1] # right sibling
             tensorBVecsIndexed!(DV, M, X, ii = parent)
 #             @show size(X.B[parent]), size(DV.bvecs[parent]), size(vec(vecs[sibling]))
-            DV.bvecs[ii] = zeros(T, size(DV.bvecs[parent],1), s_r, datalen)
+            if ~isassigned(DV.bvecs, ii)
+                DV.bvecs[ii] = zeros(T, size(DV.bvecs[parent],1), s_r, datalen)
+            end
             VmulBmulBVp!(DV.bvecs[ii], DV.vecs[sibling], B, DV.bvecs[parent])
         end
     end

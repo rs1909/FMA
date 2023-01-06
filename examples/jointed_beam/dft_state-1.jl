@@ -4,14 +4,14 @@ using BSON: @load, @save
 using LinearAlgebra
 
 function execute()
-# BEAM OBSERVED STATE
-    @load "data/Beam-DFT-0_0Nm.bson" xs ys Tstep embedscales
-    SysName = "Beam-DFT-CAS4-tst-0_0Nm"
+# MODEL OBSERVED STATE
+    @load "data/sys10dimTrainDFT-1.bson" xs ys Tstep embedscales
+    SysName = "10dim-DFT-CAS4-1-tst"
     dataINorig = xs
     dataOUTorig = ys
 
-    freq = 60.0
-    bb = FoliationIdentify(dataINorig, dataOUTorig, Tstep, embedscales, SysName, freq)
+    freq = 1/2/pi
+    bb = FoliationIdentify(dataINorig, dataOUTorig, Tstep, embedscales, SysName, freq; iterations = (f=8000, l=60))
     @save "FigureData-$(SysName).bson" bb
     return bb
 end
