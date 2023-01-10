@@ -23,7 +23,7 @@ points = [[1,2],[3,4],[5,6],[7,8]]
     for pt = 1:length(suffix)
         @load "data/Beam-DFT-$(suffix[pt]).bson" xs ys zs bandzs ampzs freqzs dampzs freqfitzs dampfitzs Tstep TstepZS embedscales
         xst, yst, Tstep, embedscales, ids = frequencyEmbed(zs, TstepZS, freqs)
-        @load "ISFdata-Beam-DFT-CAS4-tst-$(suffix[pt]).bson" Misf Xisf Tstep scale
+        @load "ISFdata-Beam-DFT-$(suffix[pt]).bson" Misf Xisf Tstep scale
         MU, XU, MS, XS = ISFNormalForm(Misf, Xisf)
         for k=2:length(ids)
             xs = xst[:,ids[k-1]:ids[k]-1]./scale

@@ -74,11 +74,11 @@ function dataRead(names, points)
                 # frequency fit
                 M = FoliationsManifoldsAutoencoders.DensePolyManifold(1, 1, 8)
                 X = FoliationsManifoldsAutoencoders.fromData(M, amps, reshape(freqs,1,:))
-                freqfit = vec(Eval(M, X, [amps]))
+                freqfit = vec(Eval(M, X, amps))
                 push!(freqfitzs, freqfit)
                 # damping fit
                 X = FoliationsManifoldsAutoencoders.fromData(M, amps, reshape(damps,1,:))
-                dampfit = vec(Eval(M, X, [amps]))
+                dampfit = vec(Eval(M, X, amps))
                 push!(dampfitzs, dampfit)            
             end
         end

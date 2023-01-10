@@ -40,25 +40,18 @@ function generate(MF, XF, MW, XW)
     ics =  aa ./ sqrt.(sum(aa.^2,dims=1)) .* (2*rand(1,nruns) .- 1)
     Tstep = 0.2
     for j=1:nruns
-#             u0 = ics[:,j] * 1.2
-        u0 = Eval(MW, XW, [ics[:,j] * 1.0])[:,1] # 0.6
-#             @show findall(isequal(NaN), u0)
+        u0 = Eval(MW, XW, ics[:,j] * 1.0)[:,1] # 0.6
+
         tspan = (0.0,Tstep*npoints) # 51 intervals with T=0.8 as in Proc Roy Soc Paper
         prob = ODEProblem(model!, u0, tspan)
         @show j, nruns
         sol = DifferentialEquations.solve(prob, Vern7(), abstol = 1e-7, reltol = 1e-7)
-#             sol = DifferentialEquations.solve(prob, Tsit5(), abstol = 1e-7, reltol = 1e-7)
+
         trange = range(tspan[1], tspan[2], length = npoints+1)
         dsol = sol(trange)
-#             @show dsol
-#             @show size(dsol[1:end-1]), size(xs[:,1+(j-1)*npoints:j*npoints])
-#             @show eltype(dsol)
-#             @show eltype(xs)
-#             xs[:,1+(j-1)*npoints:j*npoints] .= W(dsol[:,1:end-1])
-#             ys[:,1+(j-1)*npoints:j*npoints] .= W(dsol[:,2:end])
+
         xs[:,1+(j-1)*npoints:j*npoints] .= dsol[:,1:end-1]
         ys[:,1+(j-1)*npoints:j*npoints] .= dsol[:,2:end]
-        @show norm(u0), size(xs), maximum(sqrt.(sum(ys .^ 2, dims=1))), minimum(sqrt.(sum(ys .^ 2, dims=1)))
     end
     return xs, ys, Tstep
 end

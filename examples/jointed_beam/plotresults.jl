@@ -1,4 +1,5 @@
 # FOR BEAM DATA
+using LinearAlgebra
 using StatsPlots
 using Plots
 using Plots.PlotMeasures 
@@ -104,16 +105,16 @@ for it in [("0_0Nm",:red) ("1_0Nm",:blue) ("2_1Nm",:green) ("3_1Nm",:black)]
     end
 end
 
-@load "FigureData-Beam-PCA-CAS4-tst-0_0Nm.bson" bb
+@load "FigureData-Beam-PCA-0_0Nm.bson" bb
 id1 = findfirst(bb[3] .> 0.1)
 bb1 = bb
-@load "FigureData-Beam-PCA-CAS4-tst-1_0Nm.bson" bb
+@load "FigureData-Beam-PCA-1_0Nm.bson" bb
 id2 = findfirst(bb[3] .> 0.1)
 bb2 = bb
-@load "FigureData-Beam-PCA-CAS4-tst-2_1Nm.bson" bb
+@load "FigureData-Beam-PCA-2_1Nm.bson" bb
 id3 = findfirst(bb[3] .> 0.1)
 bb3 = bb
-@load "FigureData-Beam-PCA-CAS4-tst-3_1Nm.bson" bb
+@load "FigureData-Beam-PCA-3_1Nm.bson" bb
 id4 = findfirst(bb[3] .> 0.1)
 bb4 = bb
 
@@ -141,18 +142,18 @@ pl3 = plot(plDamp, [bb1[2][2:id1], bb2[2][2:id2], bb3[2][2:id3], bb4[2][2:id4], 
 #          linestyle=[:solid :dash :dot :dashdot :dot :dot :dot :dot],linecolor=[:red :blue :darkgreen :black :white :white :white :white], markershape =[:none :none :none :none :circle :cross :rect :dtriangle], markercolor=[:red :blue :darkgreen :black :red :blue :darkgreen :black], markerstrokecolor=:match, markersize=2,
 #          leg=false,xlims=[60.0,61.0],ylims=[0,0.1],xlabel="frequency [Hz]", ylabel="amplitude", title="(b)")
 pl = plot(pl1, pl2, pl3, layout = @layout([a{0.25w} b{0.35w} c{0.4w}]), size=(900,div(900,3)),margin=5mm, left_margin=5mm, bottom_margin=5mm, fontsize=14, tickfontsize=14, legend_font_pointsize=14, labelfontsize=14, titlefontsize=14)
-savefig(pl, "JointedBeam-PCA-CAS4-tst.pdf")
+savefig(pl, "JointedBeam-PCA.pdf")
 
-@load "FigureData-Beam-DFT-CAS4-tst-0_0Nm.bson" bb
+@load "FigureData-Beam-DFT-0_0Nm.bson" bb
 id1 = findfirst(bb[3] .> 0.1)
 bb1 = bb
-@load "FigureData-Beam-DFT-CAS4-tst-1_0Nm.bson" bb
+@load "FigureData-Beam-DFT-1_0Nm.bson" bb
 id2 = findfirst(bb[3] .> 0.1)
 bb2 = bb
-@load "FigureData-Beam-DFT-CAS4-tst-2_1Nm.bson" bb
+@load "FigureData-Beam-DFT-2_1Nm.bson" bb
 id3 = findfirst(bb[3] .> 0.1)
 bb3 = bb
-@load "FigureData-Beam-DFT-CAS4-tst-3_1Nm.bson" bb
+@load "FigureData-Beam-DFT-3_1Nm.bson" bb
 id4 = findfirst(bb[3] .> 0.1)
 bb4 = bb
 
@@ -179,4 +180,4 @@ pl3 = plot(plDamp, [bb1[2][2:id1], bb2[2][2:id2], bb3[2][2:id3], bb4[2][2:id4], 
 #          linestyle=[:solid :dash :dot :dashdot :dot :dot :dot :dot],linecolor=[:red :blue :darkgreen :black :white :white :white :white], markershape =[:none :none :none :none :circle :cross :rect :dtriangle], markercolor=[:red :blue :darkgreen :black :red :blue :darkgreen :black], markerstrokecolor=:match, markersize=2,
 #          leg=false,xlims=[60.0,61.0],ylims=[0,0.1],xlabel="frequency [Hz]", ylabel="amplitude", title="(b)")
 pl = plot(pl1, pl2, pl3, layout = @layout([a{0.25w} b{0.35w} c{0.4w}]), size=(900,div(900,3)),margin=5mm, left_margin=5mm, bottom_margin=5mm, fontsize=14, tickfontsize=14, legend_font_pointsize=14, labelfontsize=14, titlefontsize=14)
-savefig(pl, "JointedBeam-DFT-CAS4-tst.pdf")
+savefig(pl, "JointedBeam-DFT.pdf")

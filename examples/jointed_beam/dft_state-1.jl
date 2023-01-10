@@ -6,7 +6,7 @@ using LinearAlgebra
 function execute()
 # BEAM OBSERVED STATE
     @load "data/Beam-DFT-0_0Nm.bson" xs ys Tstep embedscales
-    SysName = "Beam-DFT-CAS4-tst-0_0Nm"
+    SysName = "Beam-DFT-0_0Nm"
     dataINorig = xs
     dataOUTorig = ys
 

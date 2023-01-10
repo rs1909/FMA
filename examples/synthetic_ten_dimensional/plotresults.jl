@@ -3,9 +3,9 @@ using LinearAlgebra
 using StatsPlots
 using Plots
 using Plots.PlotMeasures
-using PGFPlotsX
 using KernelDensity
 using BSON: @load, @save
+using LaTeXStrings
 
 include("data/sys10dimvectorfield.jl")
     function vfrhsPar(y)
@@ -41,19 +41,19 @@ function executeVF2()
 end
 
 bbvf = executeVF()
-push!(PGFPlotsX.CUSTOM_PREAMBLE,raw"\usepackage{amsmath,bm,luatex85}")
 pgfplotsx()
+push!(PGFPlotsX.CUSTOM_PREAMBLE,raw"\usepackage{amsmath,bm,luatex85}")
 
-@load "FigureData-10dim-FULL-CAS4-1-tst.bson" bb
+@load "FigureData-10dim-FULL-1.bson" bb
 id1 = findfirst(bb[3] .> 0.07)
 bbr1 = bb
-@load "FigureData-10dim-FULL-CAS4-2-tst.bson" bb
+@load "FigureData-10dim-FULL-2.bson" bb
 id2 = findfirst(bb[3] .> 0.07)
 bbr2 = bb
-@load "FigureData-10dim-FULL-CAS4-3-tst.bson" bb
+@load "FigureData-10dim-FULL-3.bson" bb
 id3 = findfirst(bb[3] .> 0.07)
 bbr3 = bb
-@load "FigureData-10dim-FULL-CAS4-4-tst.bson" bb
+@load "FigureData-10dim-FULL-4.bson" bb
 id4 = findfirst(bb[3] .> 0.07)
 bbr4 = bb
 idvf = findfirst(bbvf[3] .> 0.07)
@@ -65,19 +65,19 @@ pl = plot(
      plot([bbr1[2][2:id1], bbr2[2][2:id2], bbr3[2][2:id3], bbr4[2][2:id4], bbvf[2][2:idvf]],
           [bbr1[3][2:id1], bbr2[3][2:id2], bbr3[3][2:id3], bbr4[3][2:id4], bbvf[3][2:idvf]], linestyle=[:solid :dash :dot :dashdot],linecolor=[:red :blue :darkgreen :purple :black],label=["ST-1" "ST-2" "ST-3" "ST-4" "VF"], legend_position=:bottomright, xlims=[0.001,0.1],ylims=[0,0.07],xlabel="damping ratio [-]", ylabel="amplitude", xscale=:log10, title="(c)"),
      layout = @layout([a{0.3w} b{0.35w} c{0.35w}]), size=(900,div(900,3)),margin=5mm, left_margin=5mm, bottom_margin=5mm, fontsize=14, tickfontsize=14, legend_font_pointsize=14, labelfontsize=14, titlefontsize=14)
-savefig(pl, "FullState-tst.pdf")
+savefig(pl, "FullState.pdf")
 
 
-@load "FigureData-10dim-PCA-CAS4-16-1-tst.bson" bb # very high order U
+@load "FigureData-10dim-PCA-16-1.bson" bb # very high order U
 id1 = findfirst(bb[3] .> 0.07)
 bbr1 = bb
-@load "FigureData-10dim-PCA-CAS4-16-2-tst.bson" bb
+@load "FigureData-10dim-PCA-16-2.bson" bb
 id2 = findfirst(bb[3] .> 0.07)
 bbr2 = bb
-@load "FigureData-10dim-PCA-CAS4-16-3-tst.bson" bb
+@load "FigureData-10dim-PCA-16-3.bson" bb
 id3 = findfirst(bb[3] .> 0.07)
 bbr3 = bb
-@load "FigureData-10dim-PCA-CAS4-16-4-tst.bson" bb
+@load "FigureData-10dim-PCA-16-4.bson" bb
 id4 = findfirst(bb[3] .> 0.07)
 bbr4 = bb
 idvf = findfirst(bbvf[3] .> 0.07)
@@ -89,18 +89,18 @@ pl = plot(
      plot([bbr1[2][2:id1], bbr2[2][2:id2], bbr3[2][2:id3], bbr4[2][2:id4], bbvf[2][2:idvf]],
           [bbr1[3][2:id1], bbr2[3][2:id2], bbr3[3][2:id3], bbr4[3][2:id4], bbvf[3][2:idvf]], linestyle=[:solid :dash :dot :dashdot],linecolor=[:red :blue :darkgreen :purple :black],label=["PCA-1" "PCA-2" "PCA-3" "PCA-4" "VF"], legend_position=:bottomright, xlims=[0.001,0.1],ylims=[0,0.07],xlabel="damping ratio [-]", ylabel="amplitude", xscale=:log10, title="(f)"),
      layout = @layout([a{0.3w} b{0.35w} c{0.35w}]), size=(900,div(900,3)),margin=5mm, left_margin=5mm, bottom_margin=5mm, fontsize=14, tickfontsize=14, legend_font_pointsize=14, labelfontsize=14, titlefontsize=14)
-savefig(pl, "PCAState-tst.pdf")
+savefig(pl, "PCAState.pdf")
 
-@load "FigureData-10dim-DFT-CAS4-1-tst.bson" bb
+@load "FigureData-10dim-DFT-1.bson" bb
 id1 = findfirst(bb[3] .> 0.07)
 bbr1 = bb
-@load "FigureData-10dim-DFT-CAS4-2-tst.bson" bb
+@load "FigureData-10dim-DFT-2.bson" bb
 id2 = findfirst(bb[3] .> 0.07)
 bbr2 = bb
-@load "FigureData-10dim-DFT-CAS4-3-tst.bson" bb
+@load "FigureData-10dim-DFT-3.bson" bb
 id3 = findfirst(bb[3] .> 0.07)
 bbr3 = bb
-@load "FigureData-10dim-DFT-CAS4-4-tst.bson" bb
+@load "FigureData-10dim-DFT-4.bson" bb
 id4 = findfirst(bb[3] .> 0.07)
 bbr4 = bb
 idvf = findfirst(bbvf[3] .> 0.07)
@@ -112,19 +112,19 @@ pl = plot(
      plot([bbr1[2][2:id1], bbr2[2][2:id2], bbr3[2][2:id3], bbr4[2][2:id4], bbvf[2][2:idvf]],
           [bbr1[3][2:id1], bbr2[3][2:id2], bbr3[3][2:id3], bbr4[3][2:id4], bbvf[3][2:idvf]], linestyle=[:solid :dash :dot :dashdot],linecolor=[:red :blue :darkgreen :purple :black],label=["DFT-1" "DFT-2" "DFT-3" "DFT-4" "VF"], legend_position=:bottomright, xlims=[0.001,0.1],ylims=[0,0.07],xlabel="damping ratio [-]", ylabel="amplitude", xscale=:log10, title="(i)"),
      layout = @layout([a{0.3w} b{0.35w} c{0.35w}]), size=(900,div(900,3)),margin=5mm, left_margin=5mm, bottom_margin=5mm, fontsize=14, tickfontsize=14, legend_font_pointsize=14, labelfontsize=14, titlefontsize=14)
-savefig(pl, "DFTState-tst.pdf")
+savefig(pl, "DFTState.pdf")
 
 
-@load "FigureData-10dim-KOOPMAN-CAS4-1.bson" bb
+@load "FigureData-10dim-KOOPMAN-1.bson" bb
 id1 = findfirst(bb[3] .> 0.07)
 bbr1 = bb
-@load "FigureData-10dim-KOOPMAN-CAS4-2.bson" bb
+@load "FigureData-10dim-KOOPMAN-2.bson" bb
 id2 = findfirst(bb[3] .> 0.07)
 bbr2 = bb
-@load "FigureData-10dim-KOOPMAN-CAS4-3.bson" bb
+@load "FigureData-10dim-KOOPMAN-3.bson" bb
 id3 = findfirst(bb[3] .> 0.07)
 bbr3 = bb
-@load "FigureData-10dim-KOOPMAN-CAS4-4.bson" bb
+@load "FigureData-10dim-KOOPMAN-4.bson" bb
 id4 = findfirst(bb[3] .> 0.07)
 bbr4 = bb
 idvf = findfirst(bbvf[3] .> 0.07)
