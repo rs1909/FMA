@@ -1,9 +1,9 @@
 # Instantaneous frequencies, damping ratios
 
 ```@docs
-ODEManifoldFrequencyDamping
+MAPFrequencyDamping
 ```
 
 ```@docs
-MAPManifoldFrequencyDamping
+ODEFrequencyDamping
 ```

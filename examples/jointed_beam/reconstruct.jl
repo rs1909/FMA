@@ -8,6 +8,19 @@
 #     using PGFPlotsX
     using LinearAlgebra
     using Manifolds
+    
+function tryLoad(SysName, din)
+    bs = BSON.parse("ISFdata-$(SysName).bson")
+    Xisf = BSON.raise_recursive(bs[:Xisf], Main)
+    Tstep = BSON.raise_recursive(bs[:Tstep], Main)
+    scale = BSON.raise_recursive(bs[:scale], Main)
+    
+    dout = 2
+    orders = (P=7,Q=1,U=5,W=5)
+    node_rank = 4
+    Misf = ISFPadeManifold(dout, din, orders.P, orders.Q, orders.U, zeros(din, dout), node_rank = node_rank)
+    return Misf, Xisf, scale, Tstep
+end
 
 names = ["Point1.mat", "Point2.mat", "Point3.mat", "Point4.mat", "Point5.mat"]
 freqs = [60.5, 172, 323, 553, 810]
@@ -23,12 +36,15 @@ points = [[1,2],[3,4],[5,6],[7,8]]
     for pt = 1:length(suffix)
         @load "data/Beam-DFT-$(suffix[pt]).bson" xs ys zs bandzs ampzs freqzs dampzs freqfitzs dampfitzs Tstep TstepZS embedscales
         xst, yst, Tstep, embedscales, ids = frequencyEmbed(zs, TstepZS, freqs)
-        @load "ISFdata-Beam-DFT-$(suffix[pt]).bson" Misf Xisf Tstep scale
-        MU, XU, MS, XS = ISFNormalForm(Misf, Xisf)
+#         @load "ISFdata-Beam-DFT-$(suffix[pt]).bson" Misf Xisf Tstep scale
+        Misf, Xisf, scale, Tstep = tryLoad("Beam-DFT-$(suffix[pt])", size(xs,1))
+        
+#         MU, XU, MS, XS = ISFNormalForm(Misf, Xisf)
+        MS, XS = toFullDensePolynomial(PadeP(Misf), PadePpoint(Xisf))
         for k=2:length(ids)
             xs = xst[:,ids[k-1]:ids[k]-1]./scale
 
-            outs = Eval(MU, XU, Eval(PadeU(Misf), PadeUpoint(Xisf), xs))
+            outs = Eval(PadeU(Misf), PadeUpoint(Xisf), xs)
             out_re = zero(outs)
             out_re[:,1] .= outs[:,1]
             for q = 2:size(outs,2)

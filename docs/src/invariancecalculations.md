@@ -30,10 +30,10 @@ MWt, XWt, MR, XR = iManifoldMAP(MF, XF, [3, 4], [])
 ```
 One can also calculate the frequency and damping curves using
 ```julia
-Dr = 0.0001
-r = range(0,1,step=Dr)
-opscal = ones(1,4)/4
-frequency, damping, amplitude = MAPManifoldFrequencyDamping(MWt, XWt, MR, XR, r, 1.0; output = opscal)
+That, Rhat_r = MAPFrequencyDamping(MWt, XWt, MS, XS, amp_max)
+r = range(0, domain(That).right, length=1000)
+frequency = abs.(That.(r))
+damping = -log.(abs.(Rhat_r.(r))) ./ abs.(That.(r))
 ```
 
 The relevant functions are the following:

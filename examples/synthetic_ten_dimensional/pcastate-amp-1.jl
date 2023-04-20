@@ -12,7 +12,7 @@ function execute()
     dataOUTorig = ys
 
     freq = 1/2/pi
-    bb = FoliationIdentify(dataINorig, dataOUTorig, Tstep, embedscales, SysName, freq; iterations = (f=8000, l=60), rank_deficiency = NDIM-10)
+    bb = FoliationIdentify(dataINorig, dataOUTorig, Tstep, embedscales, SysName, freq; iterations = (f=8000,l=600), rank_deficiency = NDIM-10)
     @save "FigureData-$(SysName).bson" bb
     return bb
 end

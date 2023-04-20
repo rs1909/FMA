@@ -2,14 +2,14 @@
 * A Julia package to demonstrate various techniques for data oriented reduced order modelling
 
 !!! warning
-    This package and its documentation is experimental. The code includes constants that should be configurable, function names require re-thinking. Generally there is still a lot of work to be done. 
-    The package was being made available so that the results in paper [^paper] can be reproduced.
+    This package and its documentation are experimental; there is still a lot of work to do. 
+    The package is made available so that results in paper [^paper] can be reproduced.
 
 This package collects various computational methods employed in paper [^paper]. 
 
-The package also includes methods to calculate invariant foliations and invariant manifolds from low-dimenional vector fields as assymptotic polynomials.
+The package also includes methods to calculate invariant foliations and invariant manifolds from low-dimensional vector fields as assymptotic polynomials.
 
-We assume that the data is produced by an underlying map ``\boldsymbol{F}``, which maps from vector space ``X`` to itself. Our data comes in pairs
+We assume that the data is produced by an underlying map ``\boldsymbol{F}`` from vector space ``X`` to itself. Our data comes in pairs
 ```math
 \left(\boldsymbol{y}_{k}, \boldsymbol{x}_{k}\right),\;k=1,\ldots,N,
 ```
@@ -17,7 +17,7 @@ where
 ```math
 \boldsymbol{y}_{k}=\boldsymbol{F}\left(\boldsymbol{x}_{k}\right)+\boldsymbol{\xi}_{k}
 ```
-and ``\boldsymbol{\xi}_{k}\in X`` is a small noise sampled from a distribution with zero mean. Further, we assume that ``\boldsymbol{F}\left(\boldsymbol{0}\right)=\boldsymbol{0}``.
+and ``\boldsymbol{\xi}_{k}\in X`` is a small noise sampled from a distribution with zero mean. While the paper [^paper] assumes that ``\boldsymbol{F}\left(\boldsymbol{0}\right)=\boldsymbol{0}``, the package can handle data with a fixewd point not at the origin.
 
 There are four ways to connect a low-order model ``\boldsymbol{S}`` to ``\boldsymbol{F}``. The figure below shows the four combinations. Only invariant foliations and invariant manifolds produce meaningful reduced order models. Only invariant foliations and autoencoders can be fitted to data. The intersection is the invariant foliation.
 

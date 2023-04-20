@@ -1,6 +1,7 @@
 using FoliationsManifoldsAutoencoders
 using LinearAlgebra
 using BSON: @load, @save
+using BSON
 using Printf
 using LaTeXStrings
 using Plots
@@ -8,6 +9,19 @@ using Plots.PlotMeasures
 
     pgfplotsx()
     push!(Plots.PGFPlotsX.CUSTOM_PREAMBLE,raw"\usepackage{amsmath,bm}")
+    
+function tryLoad(SysName, din)
+    bs = BSON.parse("ISFdata-$(SysName).bson")
+    Xisf = BSON.raise_recursive(bs[:Xisf], Main)
+    Tstep = BSON.raise_recursive(bs[:Tstep], Main)
+    scale = BSON.raise_recursive(bs[:scale], Main)
+    
+    dout = 2
+    orders = (P=7,Q=1,U=5,W=5)
+    node_rank = 4
+    Misf = ISFPadeManifold(dout, din, orders.P, orders.Q, orders.U, zeros(din, dout), node_rank = node_rank)
+    return Misf, Xisf, scale, Tstep
+end
 
 function accuracyFULL()
     println("FULL")
@@ -16,12 +30,15 @@ function accuracyFULL()
         @load "data/sys10dimTrainRED-$(it[1]).bson" xs ys Tstep 
         embedscales = ones(1,10)/10
         SysName = "10dim-FULL-$(it[1])"
-        @load "ISFdata-$(SysName).bson" Misf Xisf scale Tstep
-        MU, XU, MS, XS = ISFNormalForm(Misf, Xisf)
-        @load "ManifoldImmersion-$(SysName).bson" Mimm Xres Tstep scale dataParIN dataParOUT
-        MWt, XWt = ImmersionReconstruct(Mimm, Xres, Misf, Xisf, MU, XU)
 
-        on_manifold = Eval(MWt, XWt, Eval(MU, XU, Eval(PadeU(Misf), PadeUpoint(Xisf), xs./scale))) .* scale
+#         @load "ISFdata-$(SysName).bson" Misf Xisf scale Tstep
+        # try to reproduce what it was...
+        Misf, Xisf, scale, Tstep = tryLoad(SysName, size(xs,1))
+    
+        @load "ManifoldImmersion-$(SysName).bson" Mimm Xres Tstep scale dataParIN dataParOUT
+        MWt, XWt = ImmersionReconstruct(Mimm, Xres, Misf, Xisf)
+
+        on_manifold = Eval(MWt, XWt, Eval(PadeU(Misf), PadeUpoint(Xisf), xs./scale)) .* scale
         amplitude = vec(transpose(vec(embedscales)) * on_manifold)
         
         hist = FoliationsManifoldsAutoencoders.ISFPadeLossHistogram(Misf, Xisf, xs./scale, ys./scale)
@@ -33,10 +50,10 @@ function accuracyFULL()
                               xscale=:log10, 
                               colorbar_scale=:identity, 
                               yformatter = :scientific,
-                              ylims = [0, 0.07],
-                              yticks = [0.01, 0.03, 0.05, 0.07],
-                              xlims = [1e-5, 1e-1],
-                              xticks = ([1e-5, 1e-3, 1e-1], [L"10^{-5}", L"10^{-3}", L"10^{-1}"]),
+                              ylims = [0, 0.1],
+                              yticks = [0.0, 0.03, 0.06, 0.09],
+                              xlims = [1e-6, 1e-2],
+                              xticks = ([1e-6, 1e-4, 1e-2], [L"10^{-6}", L"10^{-4}", L"10^{-2}"]),
                               ylabel = "amplitude", 
                               xlabel = L"$E_\mathrm{rel}(\bm{x}, \bm{y})$ ", 
                               title="$(it[3])"))
@@ -56,13 +73,15 @@ function accuracyPCA()
     for it in [(1,:red, "(b) -- PCA-1", 0) (2,:blue, "(e) -- PCA-2", 1) (3,:green, "(h) -- PCA-3", 2.1) (4,:black, "(k) -- PCA-4", 3.1)]
         @load "data/sys10dimTrainPCA-16-$(it[1]).bson" xs ys Tstep embedscales
         SysName = "10dim-PCA-16-$(it[1])"
-        @load "ISFdata-$(SysName).bson" Misf Xisf scale Tstep
+#         @load "ISFdata-$(SysName).bson" Misf Xisf scale Tstep
+        # try to reproduce what it was...
+        Misf, Xisf, scale, Tstep = tryLoad(SysName, size(xs,1))
 
-        MU, XU, MS, XS = ISFNormalForm(Misf, Xisf)
+#         MU, XU, MS, XS = ISFNormalForm(Misf, Xisf)
         @load "ManifoldImmersion-$(SysName).bson" Mimm Xres Tstep scale dataParIN dataParOUT
-        MWt, XWt = ImmersionReconstruct(Mimm, Xres, Misf, Xisf, MU, XU)
+        MWt, XWt = ImmersionReconstruct(Mimm, Xres, Misf, Xisf)
 
-        on_manifold = Eval(MWt, XWt, Eval(MU, XU, Eval(PadeU(Misf), PadeUpoint(Xisf), xs./scale))) .* scale
+        on_manifold = Eval(MWt, XWt, Eval(PadeU(Misf), PadeUpoint(Xisf), xs./scale)) .* scale
         amplitude = vec(transpose(vec(embedscales)) * on_manifold)
         
         hist = FoliationsManifoldsAutoencoders.ISFPadeLossHistogram(Misf, Xisf, xs./scale, ys./scale)
@@ -74,10 +93,10 @@ function accuracyPCA()
                               xscale=:log10, 
                               colorbar_scale=:identity, 
                               yformatter = :scientific,
-                              ylims = [0, 0.07],
-                              yticks = [0.01, 0.03, 0.05, 0.07],
-                              xlims = [1e-5, 1e-1],
-                              xticks = ([1e-5, 1e-3, 1e-1], [L"10^{-5}", L"10^{-3}", L"10^{-1}"]),
+                              ylims = [0, 0.1],
+                              yticks = [0.0, 0.03, 0.06, 0.09],
+                              xlims = [1e-6, 1e-2],
+                              xticks = ([1e-6, 1e-4, 1e-2], [L"10^{-6}", L"10^{-4}", L"10^{-2}"]),
                               ylabel = "amplitude", 
                               xlabel = L"$E_\mathrm{rel}(\bm{x}, \bm{y})$ ", 
                               title="$(it[3])"))
@@ -97,13 +116,15 @@ function accuracyDFT()
     for it in [(1,:red, "(c) -- DFT-1", 0) (2,:blue, "(f) -- DFT-2", 1) (3,:green, "(i) -- DFT-3", 2.1) (4,:black, "(l) -- DFT-4", 3.1)]
         @load "data/sys10dimTrainDFT-$(it[1]).bson" xs ys Tstep embedscales
         SysName = "10dim-DFT-$(it[1])"
-        @load "ISFdata-$(SysName).bson" Misf Xisf scale Tstep
+#         @load "ISFdata-$(SysName).bson" Misf Xisf scale Tstep
+        # try to reproduce what it was...
+        Misf, Xisf, scale, Tstep = tryLoad(SysName, size(xs,1))
 
-        MU, XU, MS, XS = ISFNormalForm(Misf, Xisf)
+#         MU, XU, MS, XS = ISFNormalForm(Misf, Xisf)
         @load "ManifoldImmersion-$(SysName).bson" Mimm Xres Tstep scale dataParIN dataParOUT
-        MWt, XWt = ImmersionReconstruct(Mimm, Xres, Misf, Xisf, MU, XU)
+        MWt, XWt = ImmersionReconstruct(Mimm, Xres, Misf, Xisf)
 
-        on_manifold = Eval(MWt, XWt, Eval(MU, XU, Eval(PadeU(Misf), PadeUpoint(Xisf), xs./scale))) .* scale
+        on_manifold = Eval(MWt, XWt, Eval(PadeU(Misf), PadeUpoint(Xisf), xs./scale)) .* scale
         amplitude = vec(transpose(vec(embedscales)) * on_manifold)
         
         hist = FoliationsManifoldsAutoencoders.ISFPadeLossHistogram(Misf, Xisf, xs./scale, ys./scale)
@@ -115,10 +136,10 @@ function accuracyDFT()
                               xscale=:log10, 
                               colorbar_scale=:identity, 
                               yformatter = :scientific,
-                              ylims = [0, 0.07],
-                              yticks = [0.01, 0.03, 0.05, 0.07],
-                              xlims = [1e-5, 1e-1],
-                              xticks = ([1e-5, 1e-3, 1e-1], [L"10^{-5}", L"10^{-3}", L"10^{-1}"]),
+                              ylims = [0, 0.1],
+                              yticks = [0.0, 0.03, 0.06, 0.09],
+                              xlims = [1e-6, 1e-2],
+                              xticks = ([1e-6, 1e-4, 1e-2], [L"10^{-6}", L"10^{-4}", L"10^{-2}"]),
                               ylabel = "amplitude", 
                               xlabel = L"$E_\mathrm{rel}(\bm{x}, \bm{y})$ ", 
                               title="$(it[3])"))

@@ -1,4 +1,37 @@
 
+# the input is the square norm
+@inline function bump(xsq::Number, C)
+    # higher order
+#     if xsq < C^2
+#         return exp(-xsq*xsq/(C^4 - C^2 * xsq))
+#     else
+#         return zero(xsq)
+#     end
+    #first order
+    if xsq < C^2
+        return exp(xsq/(xsq-C^2))
+    else
+        return zero(xsq)
+    end
+    zero(xsq)
+end
+
+@inline function D_bump(xsq::Number, C)
+    # higher order
+#     if xsq < C^2
+#         return exp(-xsq*xsq/(C^4 - C^2 * xsq)) * xsq * (xsq - 2*C^2) / (C^3 - C*xsq)^2
+#     else
+#         return zero(xsq)
+#     end
+    #first order
+    if xsq < C^2
+        return -C^2*exp(xsq/(xsq-C^2))/(xsq-C^2)^2
+    else
+        return zero(xsq)
+    end
+    zero(xsq)
+end
+
 struct ISFImmersionManifold{mdim, ndim, deficiency, Worder, C, 𝔽} <: AbstractManifold{𝔽}
     mlist
     M        :: ProductManifold 
@@ -42,12 +75,12 @@ function ISFImmersionManifold(mdim, ndim, Worder, kappa=0.0, field::AbstractNumb
     M = ProductManifold(mlist...)
     R = ProductRetraction(map(x->getfield(x,:R), mlist)...)
     VT = ProductVectorTransport(map(x->getfield(x,:VT), mlist)...)
-    if kappa == 0.0
-        return ISFImmersionManifold{mdim, ndim, rank_deficiency, Worder, 0.0, field}(mlist, M, R, VT, X)
-    else
-        println("C = ", -1/(2*kappa^2))
-        return ISFImmersionManifold{mdim, ndim, rank_deficiency, Worder, -1/(2*kappa^2), field}(mlist, M, R, VT, X)
-    end
+#     if kappa == 0.0
+    return ISFImmersionManifold{mdim, ndim, rank_deficiency, Worder, kappa, field}(mlist, M, R, VT, X)
+#     else
+#         println("C = ", -1/(2*kappa^2))
+#         return ISFImmersionManifold{mdim, ndim, rank_deficiency, Worder, -1/(2*kappa^2), field}(mlist, M, R, VT, X)
+#     end
 end
 
 function ImmersionB(M::ISFImmersionManifold)
@@ -133,8 +166,10 @@ function vector_transport_to(M::ISFImmersionManifold, p, X, q, method::AbstractV
     return vector_transport_to(M.M, p, X, q, method)
 end
 
-function EvalUhat(Mimm::ISFImmersionManifold, Ximm, MU, XU, Misf::ISFPadeManifold, Xisf, data)
-    dataPar = Eval(MU, XU, Eval(PadeU(Misf), PadeUpoint(Xisf), data) )
+# function EvalUhat(Mimm::ISFImmersionManifold, Ximm, MU, XU, Misf::ISFPadeManifold, Xisf, data)
+function EvalUhat(Mimm::ISFImmersionManifold, Ximm, Misf::ISFPadeManifold, Xisf, data)
+#     dataPar = Eval(MU, XU, Eval(PadeU(Misf), PadeUpoint(Xisf), data) )
+    dataPar = Eval(PadeU(Misf), PadeUpoint(Xisf), data)
     Uox = ImmersionU0point(Ximm) .+ Eval(ImmersionWp(Mimm), ImmersionWppoint(Ximm), data) .- Eval(ImmersionW0(Mimm), ImmersionW0point(Ximm), dataPar)
     return Uox
 end
@@ -147,9 +182,10 @@ function ISFImmersionLoss(M::ISFImmersionManifold{mdim, ndim, deficiency, Worder
     Uox = Eval(ImmersionU0(M), ImmersionU0point(X), dataIN) .+ Eval(ImmersionWp(M), ImmersionWppoint(X), dataIN) .- Eval(ImmersionW0(M), ImmersionW0point(X), dataParIN)
     Uoy = Eval(ImmersionU0(M), ImmersionU0point(X), dataOUT)  .+ Eval(ImmersionWp(M), ImmersionWppoint(X), dataOUT) .- Eval(ImmersionW0(M), ImmersionW0point(X), dataParOUT)
     UoxSq = sum(Uox .^ 2, dims=1)
+    EE = bump.(UoxSq, C)
     L0 = copy(Uoy)
     L0[1:end-deficiency,:] .-= ImmersionBpoint(X)[1:end-deficiency,1:end-deficiency] * Uox[1:end-deficiency,:]
-    return sum( (L0 .^ 2) .* exp.(C*UoxSq) ./ scale )/2/datalen
+    return sum( (L0 .^ 2) .* EE ./ scale )/2/datalen
 end
 
 function ISFImmersionGradient(M::ISFImmersionManifold{mdim, ndim, deficiency, Worder, C, field}, X, dataIN, dataOUT, dataParIN, dataParOUT) where {mdim, ndim, deficiency, Worder, C, field}
@@ -160,13 +196,15 @@ function ISFImmersionGradient(M::ISFImmersionManifold{mdim, ndim, deficiency, Wo
     Uox = ImmersionU0point(X) .+ Eval(ImmersionWp(M), ImmersionWppoint(X), dataIN) .- Eval(ImmersionW0(M), ImmersionW0point(X), dataParIN)
     Uoy = ImmersionU0point(X) .+ Eval(ImmersionWp(M), ImmersionWppoint(X), dataOUT) .- Eval(ImmersionW0(M), ImmersionW0point(X), dataParOUT)
     UoxSq = sum(Uox .^ 2, dims=1)
-    # objfun = sum( (L0 .^ 2) .* exp.(C * UoxSq) ./ scale )/2/datalen
+    EE = bump.(UoxSq, C)
+    D_EE = D_bump.(UoxSq, C)
+    # objfun = sum( (L0 .^ 2) .* EE ./ scale )/2/datalen
     L0 = Uoy .- ImmersionBpoint(X) * Uox
     L0 = copy(Uoy)
     L0[1:end-deficiency,:] .-= ImmersionBpoint(X)[1:end-deficiency,1:end-deficiency] * Uox[1:end-deficiency,:]
     #
-    L0deri1 = L0 .* exp.(C*UoxSq) ./ scale
-    L0deri2 = C .* Uox .* sum(L0 .^ 2, dims=1) .* exp.(C*UoxSq) ./ scale
+    L0deri1 = L0 .* EE ./ scale
+    L0deri2 = Uox .* sum(L0 .^ 2, dims=1) .* D_EE ./ scale
     # L0 otimes Uox
     DB = L0_DF(ImmersionB(M), ImmersionBpoint(X), Uox, L0 = -1.0*L0deri1)/datalen
     DB[end+1-deficiency:end,:] .= 0
@@ -189,12 +227,12 @@ function ISFImmersionRiemannianGradient(M::ISFImmersionManifold, X, dataIN, data
 end
 
 @doc raw"""
-    MWt, XWt = ImmersionReconstruct(Mimm, Ximm, Misf, Xisf, MU, XU)
+    MWt, XWt = ImmersionReconstruct(Mimm, Ximm, Misf, Xisf)
     
 Creates a manifold immersion from the locally accurate foliation represented by `Mimm, Ximm`, 
-the full foliation represented by `Misf, Xisf` and the normal form transformation `MU, XU`.
+and the full foliation represented by `Misf, Xisf`.
 """
-function ImmersionReconstruct(Mimm, Xres, Misf, Xisf, MU, XU; rank_deficiency = 0)
+function ImmersionReconstruct(Mimm, Xres, Misf, Xisf; rank_deficiency = 0)
     #---------------------------------------------------------
     #
     # Reconstructing the manifold immersion
@@ -214,15 +252,15 @@ function ImmersionReconstruct(Mimm, Xres, Misf, Xisf, MU, XU; rank_deficiency = 
     # note: 'dout' is out for U, but 'in' for W
     
     # U = Uout o PadeU(Xisf)
-    Ulin = getLinearPart(MU, XU)*PadeUpoint(Xisf).parts[2]'
+    Ulin = PadeUpoint(Xisf).parts[2]'
     dout, din = size(Ulin)
     Q = zeros(din, din)
     Q[1:din-dout,:] .= ImmersionWppoint(Xres)'
     Q[1+din-dout:end,:] .= Ulin
 
-    function UNewt(Mimm, Xres, Misf, Xisf, MU, XU, MW, XW, z)
-        X = [ EvalUhat(Mimm, Xres, MU, XU, Misf, Xisf, reshape(Eval(MW, XW, z),:,1));
-              Eval(MU, XU, Eval(PadeU(Misf), PadeUpoint(Xisf), reshape(Eval(MWt, XWt, z),:,1)) ) - z]
+    function UNewt(Mimm, Xres, Misf, Xisf, MW, XW, z)
+        X = [ EvalUhat(Mimm, Xres, Misf, Xisf, reshape(Eval(MW, XW, z),:,1));
+              Eval(PadeU(Misf), PadeUpoint(Xisf), reshape(Eval(MWt, XWt, z),:,1)) - z]
         return vec(X)
     end
 
@@ -233,12 +271,12 @@ function ImmersionReconstruct(Mimm, Xres, Misf, Xisf, MU, XU; rank_deficiency = 
 
     # Newton iteration
     MW0, XW0 = toFullDensePolynomial(ImmersionW0(Mimm), ImmersionW0point(Xres))
-    order = max(PolyOrder(MU), PolyOrder(MW0)) # could be the sum of them, too!
+    order = 2*PolyOrder(MW0) # could be the sum of them, too!
         
     MWt = DensePolyManifold(dout, din, order)
     XWt = zero(MWt)
-    for k=1:2*order
-        XWt2 = XWt - Q \ fromFunction(MWt, (z) -> UNewt(Mimm, Xres, Misf, Xisf, MU, XU, MWt, XWt, z))
+    for k=1:order + 4
+        XWt2 = XWt - Q \ fromFunction(MWt, (z) -> UNewt(Mimm, Xres, Misf, Xisf, MWt, XWt, z))
         XWt .= XWt2
     end
     println("Steady state = ", Eval(MWt, XWt, zeros(dout)))
@@ -246,15 +284,30 @@ function ImmersionReconstruct(Mimm, Xres, Misf, Xisf, MU, XU; rank_deficiency = 
     return MWt, XWt
 end
 
+mutable struct LDIF_PDebug <: DebugAction
+    print::Function
+    t0
+    Tstep
+    LDIF_PDebug(Tstep, print::Function=print) = new(print, time(), Tstep)
+end
+
+function (d::LDIF_PDebug)(mp,trs,i::Int)
+    d.print(@sprintf("time = %.1f[s] ", time()-d.t0), 
+            @sprintf("F(x) = %.4e ", get_cost(mp, trs.p)), 
+            @sprintf("G(x) = %.4e ", norm(get_manifold(mp), trs.p, trs.X)),
+            "| B:", 
+            unique(sort(abs.(angle.(eigvals(ImmersionBpoint(trs.p)))/d.Tstep))))
+end
+
 @doc raw"""
-    Xres, dataParIN, dataParOUT = ISFImmersionSolve!(Mimm, Ximm, Misf, Xisf, Uout, Wperp, Sperp, dataIN, dataOUT; maxit = 25)
+    Xres, dataParIN, dataParOUT = ISFImmersionSolve!(Mimm, Ximm, Misf, Xisf, S2, U2, dataIN, dataOUT; maxit = 25, rank_deficiency = 0, Tstep = 1.0)
     
 Solves the optimisation problem
 ```math
 \arg\min_{\boldsymbol{S},\boldsymbol{U}}\sum_{k=1}^{N}\left\Vert \boldsymbol{x}_{k}\right\Vert ^{-2}\exp\left(-\frac{1}{2\kappa^{2}}\left\Vert \hat{\boldsymbol{U}}\left(\boldsymbol{x}_{k}\right)\right\Vert ^{2}\right)\left\Vert \boldsymbol{B}\hat{\boldsymbol{U}}\left(\boldsymbol{x}_{k}\right)-\hat{\boldsymbol{U}}\left(\boldsymbol{y}_{k}\right)\right\Vert ^{2}
 ```
 """
-function ISFImmersionSolve!(Mimm, Ximm, Misf, Xisf, MU, XU, S2, U2, dataIN, dataOUT; maxit = 25, rank_deficiency = 0, Tstep = 1.0)
+function ISFImmersionSolve!(Mimm, Ximm, Misf, Xisf, S2, U2, dataIN, dataOUT; maxit = 25, rank_deficiency = 0, Tstep = 1.0)
     #---------------------------------------------------------
     #
     # Fitting a manifold as an immersion
@@ -263,9 +316,11 @@ function ISFImmersionSolve!(Mimm, Ximm, Misf, Xisf, MU, XU, S2, U2, dataIN, data
     # the parameters of the manifold using the submersion we have calculated
     dout, din = size(PadeUpoint(Xisf).parts[1]')
     
-    dataParIN = Eval(MU, XU, Eval(PadeU(Misf), PadeUpoint(Xisf), dataIN) )
-    dataParOUT = Eval(MU, XU, Eval(PadeU(Misf), PadeUpoint(Xisf), dataOUT) )
-
+#     dataParIN = Eval(MU, XU, Eval(PadeU(Misf), PadeUpoint(Xisf), dataIN) )
+#     dataParOUT = Eval(MU, XU, Eval(PadeU(Misf), PadeUpoint(Xisf), dataOUT) )
+    dataParIN = Eval(PadeU(Misf), PadeUpoint(Xisf), dataIN)
+    dataParOUT = Eval(PadeU(Misf), PadeUpoint(Xisf), dataOUT)
+    
     # To initialise:
     #   Assume that 
     #       - A is the full linear dynamics
@@ -303,7 +358,8 @@ function ISFImmersionSolve!(Mimm, Ximm, Misf, Xisf, MU, XU, S2, U2, dataIN, data
     ImmersionW0point(Ximm) .= 0.0
     
     # checking if problem is well defined
-    Ulin = getLinearPart(MU, XU)*PadeUpoint(Xisf).parts[2]'
+#     Ulin = getLinearPart(MU, XU)*PadeUpoint(Xisf).parts[2]'
+    Ulin = PadeUpoint(Xisf).parts[2]'
     dout, din = size(Ulin)
     Q = zeros(din, din)
     Q[1:din-dout,:] .= ImmersionWppoint(Ximm)'
@@ -317,29 +373,17 @@ function ISFImmersionSolve!(Mimm, Ximm, Misf, Xisf, MU, XU, S2, U2, dataIN, data
                 (M, x) -> ISFImmersionLoss(M, x, dataIN, dataOUT, dataParIN, dataParOUT), 
                 (M, x) -> ISFImmersionRiemannianGradient(M, x, dataIN, dataOUT, dataParIN, dataParOUT),
                 ApproxHessianFiniteDifference(
-            Mimm,
-            Ximm,
-            (M, x) -> ISFImmersionRiemannianGradient(M, x, dataIN, dataOUT, dataParIN, dataParOUT);
-            steplength=2^(-22),
-            retraction_method=Mimm.R,
-            vector_transport_method=Mimm.VT,
-        ),
+                    Mimm,
+                    Ximm,
+                    (M, x) -> ISFImmersionRiemannianGradient(M, x, dataIN, dataOUT, dataParIN, dataParOUT);
+                    steplength=2^(-22),
+                    retraction_method=Mimm.R,
+                    vector_transport_method=Mimm.VT),
                 Ximm,
                 retraction_method = Mimm.R,
-                  max_trust_region_radius=0.5,
-                  stopping_criterion=StopWhenAny(
-                        StopWhenGradientNormLess(1e-8),
-                        StopAfterIteration(maxit)
-                        ),
-                debug = [
-        :Stop,
-        :Iteration,
-        :Cost,
-        " | ",
-#         DebugEig(Tstep),
-        "\n",
-        1,
-    ])
+                max_trust_region_radius=0.5,
+                stopping_criterion=StopWhenAny(StopWhenGradientNormLess(1e-8), StopAfterIteration(maxit)),
+                debug = [:Stop, :Iteration, LDIF_PDebug(Tstep), "\n", 1])
     Ximm .= Xres
     return Xres, dataParIN, dataParOUT
 end

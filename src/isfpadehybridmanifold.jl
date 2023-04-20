@@ -1005,36 +1005,46 @@ end
 #          Wperp: the complement of the left invariant subspace
 #          Sperp: the dynamics on the left invariant subspace
 function LinearFit(dataIN, dataOUT, Tstep, nearest)
-    avgIN = sum(dataIN, dims=2) / size(dataIN,2)
-    avgOUT = sum(dataOUT, dims=2) / size(dataOUT,2)
-    XXt = (dataIN .- avgIN) * transpose(dataIN)
-    YXt = (dataOUT .- avgOUT) * transpose(dataIN)
-    # the first approximation
-    A = YXt * inv(XXt)
-    Xhat = -A * avgIN - avgOUT
-    Xstar = (I - A) \ Xhat
-#     println("Steady state 0")
-#     display(Xstar)
-
-    # again with scaling until converges. 
-    # It is recursive because scaling is calculated based on previous estimate of steady state
-    for k=1:3
-        scale = sqrt.(AmplitudeScaling(dataIN, Xstar))
-        avgIN = sum(dataIN .* scale, dims=2) / size(dataIN,2)
-        avgOUT = sum(dataOUT .* scale, dims=2) / size(dataOUT,2)
-        XXt = ((dataIN .- avgIN).*scale) * transpose(dataIN)
-        YXt = ((dataOUT .- avgOUT).*scale) * transpose(dataIN)
-        # scaled approximation
-        A .= YXt * inv(XXt)
-        Xhat .= -A * avgIN - avgOUT
-        Xstar .= (I - A) \ Xhat
-#         println("Steady state ", k)
-#         display(Xstar)
+    println("------ START FITTING LINEAR MODEL ------")
+    # We fit to a linear model without scaling
+    #   y = A x + b
+    # Define X_ij = x_i x_j, Y_ij = 
+    X = sum(dataIN, dims=2) / size(dataIN,2)
+    Y = sum(dataOUT, dims=2) / size(dataOUT,2)
+    XX = dataIN * transpose(dataIN) / size(dataIN,2)
+    YX = dataOUT * transpose(dataIN) / size(dataIN,2)
+    # the least-squares solution is
+    XXt = XX - X * transpose(X)
+    YXt = YX - Y * transpose(X)
+    A = YXt / XXt
+    b = Y - A * X
+    Xstar = (I - A) \ b
+    
+    # now scaled around steady state, up to machine precision
+    # TODO change the magic number of 100
+    for k = 1:100
+        scale = AmplitudeScaling(dataIN, Xstar)
+        X = sum(dataIN .* scale, dims=2) / size(dataIN,2)
+        Y = sum(dataOUT .* scale, dims=2) / size(dataOUT,2)
+        XX = dataIN * transpose(dataIN .* scale) / size(dataIN,2)
+        YX = dataOUT * transpose(dataIN .* scale) / size(dataIN,2)
+        # the least-squares solution is
+        XXt = XX - X * transpose(X)
+        YXt = YX - Y * transpose(X)
+        A .= YXt / XXt
+        b = Y - A * X
+        Xs = (I - A) \ b
+        err = norm(Xs - Xstar)
+        Xstar .= Xs
+        print(k, ".E=", @sprintf("%.4e", err), " ")
+        if err < 20*eps(eltype(Xstar))
+            break
+        end
     end
+    println()
     
     F0 = schur(A)
     args = abs.(angle.(F0.values))
-    println("------ START FITTING LINEAR MODEL ------")
     println("All frequencies [Hz]")
     println(unique(sort(args))/Tstep/(2*pi))
     println("All frequencies [1/rad]")
@@ -1109,7 +1119,7 @@ mutable struct DebugEntryNorm <: DebugAction
     end
 end
 
-function (d::DebugEntryNorm)(::Problem, o::Options, i)
+function (d::DebugEntryNorm)(p, o, i)
     (i >= 0) && Printf.format(d.io, Printf.Format(d.format), norm(getfield(o, d.field)))
     return nothing
 end

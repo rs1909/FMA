@@ -71,6 +71,8 @@ export ManifoldAmplitudeSquare
 export MAPManifoldFrequencyDamping,
     ODEManifoldFrequencyDamping
     
+export MAPFrequencyDamping, ODEFrequencyDamping
+    
 export ISFNormalForm,
     dataPrune,
     PCAEmbed,
@@ -96,8 +98,7 @@ using Printf
 using Combinatorics
 # using ForwardDiff
 
-# this is from external source
-using TRS
+using BSON
 using BSON: @load, @save
 using Random
 
@@ -105,6 +106,8 @@ using Random
 using DynamicPolynomials
 using MultivariatePolynomials
 using TaylorSeries
+# calculating frequencies
+using ApproxFun
 
 # from densepolynomials.jl
 # using DynamicPolynomials
@@ -114,6 +117,9 @@ using SparseArrays
 # isfutils for filtering data, might not need
 using DSP
 using DelimitedFiles
+
+# this is from external source
+using TRS
 
 # linear part of the submersion
 # this consists of vectors of unit length, therefore they are on the unit sphere
@@ -158,6 +164,10 @@ include("isfimmersionmanifold.jl")
 include("aencmanifold.jl")
 include("instfreqdamp.jl")
 include("foliationidentify.jl")
+# include("ldif_ext_utn.jl")
+# include("ldif_ext_un.jl")
+# include("ldif_ext_utn_un.jl")
+# include("ldif_ext_moll.jl")
 
 # need to remove this?
 # include("isfutils.jl")

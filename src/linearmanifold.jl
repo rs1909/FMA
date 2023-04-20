@@ -23,19 +23,33 @@ function retract!(M::LinearManifold{ndim, n, transp}, q, p, X, method::AbstractR
     return retract!(M.M, q, p, X, M.R)
 end
 
-function retract!(M::LinearManifold{ndim, n, transp}, q, p, X, method::ExponentialRetraction) where {ndim, n, transp}
-    return retract!(M.M, q, p, X, M.R)
+function retract!(M::LinearManifold{ndim, n, transp}, q, p, X, t::Number, method::AbstractRetractionMethod) where {ndim, n, transp}
+    return retract!(M.M, q, p, X, t, M.R)
 end
 
-function retract(
-    M::LinearManifold,
-    p,
-    X,
-    m::AbstractRetractionMethod = default_retraction_method(M),
-)
+# function retract!(M::LinearManifold{ndim, n, transp}, q, p, X, method::ExponentialRetraction) where {ndim, n, transp}
+#     return retract!(M.M, q, p, X, M.R)
+# end
+
+function retract(M::LinearManifold, p, X,  m::AbstractRetractionMethod)
 #     q = allocate_result(M, retract, p, X)
     return retract(M.M, p, X, m)
 end
+
+function retract(M::LinearManifold, p, X, t::Number, m::AbstractRetractionMethod)
+#     q = allocate_result(M, retract, p, X)
+    return retract(M.M, p, X, t, m)
+end
+
+# function retract(M::LinearManifold, p, X,  m::ExponentialRetraction)
+# #     q = allocate_result(M, retract, p, X)
+#     return retract(M.M, p, X, m)
+# end
+# 
+# function retract(M::LinearManifold, p, X,  m::ExponentialRetraction)
+# #     q = allocate_result(M, retract, p, X)
+#     return retract(M.M, p, X, m)
+# end
 
 function vector_transport_to!(M::LinearManifold, Y, p, X, q, method::AbstractVectorTransportMethod)
 #     println("ISF VECTOR TRANSPORT 1")
@@ -283,18 +297,16 @@ function retract!(M::ConstantManifold, q, p, X, method::AbstractRetractionMethod
     return retract!(M.M, q, p, X, M.R)
 end
 
-function retract!(M::ConstantManifold, q, p, X, method::ExponentialRetraction)
-    return retract!(M.M, q, p, X, M.R)
+function retract!(M::ConstantManifold, q, p, X, t::Number, method::AbstractRetractionMethod)
+    return retract!(M.M, q, p, X, t, M.R)
 end
 
-function retract(
-    M::ConstantManifold,
-    p,
-    X,
-    m::AbstractRetractionMethod = default_retraction_method(M),
-)
-#     q = allocate_result(M, retract, p, X)
+function retract(M::ConstantManifold, p, X, m::AbstractRetractionMethod = default_retraction_method(M))
     return retract(M.M, p, X, m)
+end
+
+function retract(M::ConstantManifold, p, X, t::Number, m::AbstractRetractionMethod = default_retraction_method(M))
+    return retract(M.M, p, X, t, m)
 end
 
 function vector_transport_to!(M::ConstantManifold, Y, p, X, q, method::AbstractVectorTransportMethod)

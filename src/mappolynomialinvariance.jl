@@ -314,7 +314,7 @@ function iManifoldMAP(MF0::DensePolyManifold, XF0, vars, par; order = PolyOrder(
                 k = intvar[j]
                 # SOLVE: eigval[k]*W.W[k,x] - prod(eigval.^W.mexp[:,id])*W.W[k,x] = R.W[sel,x] + B[k,x]
                 den = eigval[k] - prod(eigval[intvar].^MW.mexp[:,x])
-                if abs(den) < 0.1
+                if abs(den) < 0.01
                     XR[j,x] = -B[k,x]
                     XW[k,x] = 0
                     println("Internal resonance: ", abs(den), " at dim=", k, " exp=", MW.mexp[:,x])
@@ -334,14 +334,16 @@ function iManifoldMAP(MF0::DensePolyManifold, XF0, vars, par; order = PolyOrder(
             end
         end
     end
+    # back to the original coordinate system
+    XWc = Complex.(eigvec) * XW
     # Check the result
     res0 = zero(MW)
-    DensePolySubstitute!(MW, res0, MW, XW, MR, XR, multabWoR) # res0 = W o R
+    DensePolySubstitute!(MW, res0, MW, XWc, MR, XR, multabWoR) # res0 = W o R
     res1 = zero(MW)
-    DensePolySubstitute!(MW, res1, MF, XF, MW, XW, multabFoW) # res1 = F o W
+    DensePolySubstitute!(MW, res1, MF, XF0c, MW, XWc, multabFoW) # res1 = F o W
     B = res0 - res1
     if maximum(abs.(B)) > 1e-10
-        println("High error in SSM calculation (CPLX): ", maximum(abs.(B)))
+        println("High error in Manifold calculation (CPLX): ", maximum(abs.(B)))
     end
 
     MWr, XWr, MRr, XRr = iManifoldTransform(MW, XW, MR, XR, eigvec)
@@ -352,8 +354,8 @@ function iManifoldMAP(MF0::DensePolyManifold, XF0, vars, par; order = PolyOrder(
     DensePolySubstitute!(MWr, res1, MF0, XF0, MWr, XWr) # res1 = F0 o W
     B = res0 - res1
     if maximum(abs.(B)) > 1e-10
-        println("High error in SSM calculation (REAL): ", maximum(abs.(B)))
+        println("High error in Manifold calculation (REAL): ", maximum(abs.(B)))
     end
 
-    return MWr, XWr, MRr, XRr, MW, XW, MR, XR
+    return MWr, XWr, MRr, XRr, MW, XWc, MR, XR
 end

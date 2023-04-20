@@ -75,7 +75,7 @@ function iFoliationVF(MF0::DensePolyManifold, XF0, vars, par; order = PolyOrder(
 
     # @time multabDWF = mulTable(W.mexp, W.mexp, W.mexp)
     # mulTable(out.mexp, out.mexp, in2.mexp)
-    deritabDW = DensePolyDeriMatrices(MW, MW)
+    deritabDW = DensePolyDeriMatrices(MW.mexpALL, MW.mexpALL)
     multabDWoF = DensePolySubstituteTab!(MW, XW, MW, XW, MF, XF)
     multabRoW = DensePolySubstituteTab!(MW, XW, MR, XR, MW, XW)
 
@@ -235,7 +235,7 @@ function iManifoldVF(MF0::DensePolyManifold, XF0, vars, par; order = PolyOrder(M
     setLinearPart!(MW, XW, W1)
 
     # DW R - F o W
-    deritabDW = DensePolyDeriMatrices(MW, MW)
+    deritabDW = DensePolyDeriMatrices(MW.mexpALL, MW.mexpALL)
     multabDWoR = DensePolySubstituteTab!(MW, XW, MW, XW, MR, XR)
     multabFoW = DensePolySubstituteTab!(MW, XW, MF, XF, MW, XW)
 
@@ -276,11 +276,13 @@ function iManifoldVF(MF0::DensePolyManifold, XF0, vars, par; order = PolyOrder(M
             end
         end
     end
+    # back to the original coordinate system
+    XWc = Complex.(eigvec) * XW
     # Check the result
     res0 = zero(MW)
-    DensePolyDeriMul!(MW, res0, MW, XW, MR, XR, multabDWoR, deritabDW) # res0 = DW . R
+    DensePolyDeriMul!(MW, res0, MW, XWc, MR, XR, multabDWoR, deritabDW) # res0 = DW . R
     res1 = zero(MW)
-    DensePolySubstitute!(MW, res1, MF, XF, MW, XW, multabFoW) # res1 = F o W
+    DensePolySubstitute!(MW, res1, MF, XF0c, MW, XWc, multabFoW) # res1 = F o W
     B = res0 - res1
     if maximum(abs.(B)) > 1e-10
         println("High error in iManifoldVF calculation (CPLX): ", maximum(abs.(B)))
@@ -297,5 +299,5 @@ function iManifoldVF(MF0::DensePolyManifold, XF0, vars, par; order = PolyOrder(M
         println("High error in iManifoldVF calculation (REAL): ", maximum(abs.(B)))
     end
 
-    return MWr, XWr, MRr, XRr, MW, XW, MR, XR
+    return MWr, XWr, MRr, XRr, MW, XWc, MR, XR
 end

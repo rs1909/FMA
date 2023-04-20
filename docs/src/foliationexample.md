@@ -2,7 +2,7 @@
 
 The following code calculates an invariant foliation of a 4-dimensional map and compares it to the analytic calculation by `iManifoldMAP`.
 
-First we bring the required packeges into scope.
+First we bring the required packages into scope.
 ```julia
 using FoliationsManifoldsAutoencoders
 using Manifolds
@@ -47,7 +47,7 @@ function generate(amp = 1.0)
 end
 ```
 
-We convert map `trivial` into a polynomial form.
+We convert map `trivial` into polynomial form.
 ```julia
 MF = DensePolyManifold(4, 4, 5)
 XF = fromFunction(MF, trivial)
@@ -60,33 +60,35 @@ MWt, XWt, MS, XS = iManifoldMAP(MF, XF, [3, 4], [])
 
 We calculate the corrected instantaneous frequencies and damping ratios for the invariant manifold, we have just calculated.
 ```julia
-Dr = 0.0001
-r = range(0,1,step=Dr)
+amp_max = 0.15
 opscal = ones(1,4)/4
-frequency, damping, amplitude = MAPManifoldFrequencyDamping(MWt, XWt, MS, XS, r, 1.0; output = opscal)
+That, Rhat_r = MAPFrequencyDamping(MWt, XWt, MS, XS, amp_max, output = opscal)
+r = range(0, domain(That).right, length=1000)
+omega = abs.(That.(r))
+zeta = -log.(abs.(Rhat_r.(r))) ./ abs.(That.(r))
 ```
 
 We generate data.
 ```
 # create data
-dataIN, dataOUT = generate(0.5)
+dataIN, dataOUT = generate()
 ```
 
-We identify the invariant foliation, locally invriant foliation, extract the invariant manifold and calculate instantaneous frequencies, damping ratios. This is near the natural frequency ``0.12``, if the time step is assumed to be ``1.0``.
-```
+We identify the invariant foliation, locally invariant foliation, extract the invariant manifold and calculate instantaneous frequencies, damping ratios. This is near the natural frequency ``0.12``, if the time step is assumed to be ``1.0``.
+```julia
 # for which frequency is the foliation calculated for
 freq = 0.12/2/pi
 # we did not specify sampling frequency, so we keep it as unit time-step
 Tstep = 1.0
 
-frequencyD, dampingD, amplitudeD = FoliationIdentify(dataIN, dataOUT, Tstep, opscal, "trivial", freq; orders = (P=7,Q=1,U=5,W=5), iterations = (f=200, l=20))
+frequencyD, dampingD, amplitudeD = FoliationIdentify(dataIN, dataOUT, Tstep, opscal, "trivial", freq; orders = (P=7,Q=1,U=5,W=5), iterations = (f=1000, l=100))
 ```
 
 Finally we plot the result.
 ```julia
-pl = plot([frequency[2:end], frequencyD[2:end]], [amplitude[2:end], amplitudeD[2:end]], xlims=[0.11, 0.125], ylims=[0, 0.15], xlabel="frequency [rad/s]", ylabel="amplitude", label=["MAP" "DATA"])
+pl = plot([omega, frequencyD[2:end]], [r, amplitudeD[2:end]], xlims=[0.11, 0.125], ylims=[0, 0.15], xlabel="frequency [rad/s]", ylabel="amplitude", label=["MAP" "DATA"])
 display(pl)
 ```
 
 !!! note
-    The number of iterations are not high enough the produce accurate results, they are set that the example runs quickly enough. Similarly the maximum amplitude within the generated data is quite low, which influences accuracy at high amplitudes.
+    The number of iterations are not high enough to produce accurate results, they are set so that the example runs quickly enough.

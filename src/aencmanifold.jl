@@ -100,45 +100,123 @@ end
 # end
 # result is in 'p', input is 'q'
 # This is a QR based retraction as nothing else works consistently
-function retract!(M::OAEManifold{ndim, mdim, order, true, field}, p, q, X, method::AbstractRetractionMethod = QRRetraction()) where {ndim, mdim, order, field}
-    q1 = q.parts[1] + X.parts[1]
-    q2 = q.parts[2] + X.parts[2]
-    # zero-th iteration
-    G = svd(q1)
-    p1 = G.U * G.Vt
-    # first iteration
-    for k=1:5
-        A = p1' * (q1 - q2 * q2' * p1);
-        F = svd(reshape((kron(A',Diagonal(I,size(q2,1))) + kron(Diagonal(I,size(q1,2)),q2 * q2'))\vec(q1),size(q1)));
-        p1 = F.U*F.Vt
-    end
-    
-    beta = p1' * q2
-    p2 = q2 - p1 * beta
+# function retract!(M::OAEManifold{ndim, mdim, order, true, field}, p, q, X, alpha::Number, method::AbstractRetractionMethod = QRRetraction()) where {ndim, mdim, order, field}
+#     q1 = q.parts[1] + alpha * X.parts[1]
+#     q2 = q.parts[2] + alpha * X.parts[2]
+#     # zero-th iteration
+#     G = svd(q1)
+#     p1 = G.U * G.Vt
+#     # first iteration
+#     for k=1:5
+#         A = p1' * (q1 - q2 * q2' * p1);
+#         F = svd(reshape((kron(A',Diagonal(I,size(q2,1))) + kron(Diagonal(I,size(q1,2)),q2 * q2'))\vec(q1),size(q1)));
+#         p1 = F.U*F.Vt
+#     end
+#     
+#     beta = p1' * q2
+#     p2 = q2 - p1 * beta
+# 
+#     p.parts[1] .= p1
+#     p.parts[2] .= p2
+#     return p
+# end
 
-    p.parts[1] .= p1
-    p.parts[2] .= p2
-    return p
-end
+# THE OLD VERSION
+# function retract!(M::OAEManifold{ndim, mdim, order, false, field}, p, q, X, alpha::Number, method::AbstractRetractionMethod = QRRetraction()) where {ndim, mdim, order, field}
+#     q1 = q.parts[1] + alpha * X.parts[1]
+#     q2 = q.parts[2] + alpha * X.parts[2]
+#     # linear indices
+#     linid = findall(isequal(1), dropdims(sum(M.mlist[2].mexp,dims=1),dims=1))
+#     MM = zeros(size(M.mlist[2].mexp))
+#     MM[:,linid] .=  M.mlist[2].mexp[:,linid]
+# #     set-up
+#     AA = q2 * q2'
+#     BB = q1 + q2 * MM'
+#     # zero-th iteration
+#     G = svd(q1)
+#     p1 = G.U * G.Vt
+#     # first iteration
+#     for k=1:15
+#         A = p1' * (q1 + q2*MM' - q2 * q2' * p1);
+#         p1t = reshape((kron(A',Diagonal(I,size(q2,1))) + kron(Diagonal(I,size(q1,2)),q2 * q2'))\vec(q1 + q2*MM'),size(q1))
+#     #     @show norm(p1t*A + q2 * q2' * p1t - (q1 + q2*MM'))
+#         F = svd(p1t)
+#         p1 = F.U*F.Vt
+#         a = p1' * (BB - AA * p1)
+#         @show norm(p1 * a + AA * p1 - BB)
+#     end
+#     beta = p1' * q2 - MM
+#     p2 = q2 - p1 * beta
+# 
+#     p.parts[1] .= p1
+#     p.parts[2] .= p2
+#     return p
+# end
 
-function retract!(M::OAEManifold{ndim, mdim, order, false, field}, p, q, X, method::AbstractRetractionMethod = QRRetraction()) where {ndim, mdim, order, field}
-    q1 = q.parts[1] + X.parts[1]
-    q2 = q.parts[2] + X.parts[2]
-    # zero-th iteration
-    G = svd(q1)
-    p1 = G.U * G.Vt
-    # linear indices
+# function retres(xx, AA, BB, MM, ndim, mdim)
+#     p1 = reshape(xx[1:ndim * mdim], ndim, mdim)
+#     a = reshape(xx[ndim * mdim + 1 : end], mdim, mdim)
+#     return [vec(BB - p1 * a - AA * p1); vec(I - p1' * p1)]
+# end
+# 
+# function retjac(xx, AA, BB, MM, ndim, mdim)
+#     xxp = copy(xx)
+#     epsilon = 1e-9
+#     JAC = zeros(length(xx), length(xx))
+#     for k=1:length(xx)
+#         xxp[k] += epsilon
+#         JAC[:,k] .= -(retres(xxp, AA, BB, MM, ndim, mdim) .- retres(xx, AA, BB, MM, ndim, mdim)) / epsilon
+#         xxp[k] = xx[k]
+#     end
+#     return JAC
+# end
+# 
+function retract!(M::OAEManifold{ndim, mdim, order, orthogonal, field}, p, q, X, alpha::Number, method::AbstractRetractionMethod = QRRetraction()) where {ndim, mdim, order, orthogonal, field}
+#     println("Newton orthoProj retraction")
+    q1 = q.parts[1] + alpha * X.parts[1]
+    q2 = q.parts[2] + alpha * X.parts[2]
+    # use Newton iteration for solving the constraint equation
+    #   p1 a + q2 q2^T p1 = q1 + q2 M
+    #   p1^T p1 = I
     linid = findall(isequal(1), dropdims(sum(M.mlist[2].mexp,dims=1),dims=1))
-    MM = zeros(size(M.mlist[2].mexp))
+    MM = zeros(eltype(q1), size(M.mlist[2].mexp)...)
     MM[:,linid] .=  M.mlist[2].mexp[:,linid]
-    # first iteration
-    for k=1:5
-        A = p1' * (q1 + q2*MM' - q2 * q2' * p1);
-        p1t = reshape((kron(A',Diagonal(I,size(q2,1))) + kron(Diagonal(I,size(q1,2)),q2 * q2'))\vec(q1 + q2*MM'),size(q1))
-    #     @show norm(p1t*A + q2 * q2' * p1t - (q1 + q2*MM'))
-        F = svd(p1t)
-        p1 = F.U*F.Vt
+    # Try the equations instead
+    #   p1 a + AA p1 = BB
+    #   p1^T p1 = I
+    AA = q2 * q2'
+    BB = q1 + q2 * MM'
+    CF = zeros(eltype(q1), ndim * mdim + mdim * mdim, ndim * mdim + mdim * mdim)
+    # initialise
+    p1 = copy(q1)
+    a = q1' * (BB - AA * q1)
+    Idn = Diagonal(I,ndim)
+    Idm = Diagonal(I,mdim)
+    # the loop
+    for k = 1:100
+        # [i,j,k,l] := I[i,k] * a[l,j] + A[i,k] * I[j,l]
+        CF[1:ndim * mdim, 1:ndim * mdim] .= kron(a, Idn) .+ kron(Idm, AA)
+        # [i,j,k,l] := p1[i,k] * I[j,l]
+        CF[1:ndim * mdim, ndim * mdim + 1 : end] .= kron(Idm, p1)
+        @views CFp = reshape(CF[ndim * mdim + 1 : end, 1:ndim * mdim], mdim, mdim, ndim, mdim)
+        @tullio CFp[i,j,k,l] = p1[k,j] * Idm[i,l] + p1[k,i] * Idm[j,l]
+#         JJ = kron(Idm, transpose(p1))
+#         JJ = JJ + transpose(JJ)
+#         @show norm(CF[ndim * mdim + 1 : end, 1:ndim * mdim] - JJ)
+        F = svd(CF)
+        ids = findall(F.S .> 20*eps(eltype(CF)))
+        res_t = F.U' * [vec(BB - p1 * a - AA * p1); vec(I - p1' * p1)]
+        res = F.V[:,ids] * Diagonal( one(eltype(CF)) ./ F.S[ids]) * res_t[ids]
+        idz = findall(F.S .<= 20*eps(eltype(CF)))
+#         @show norm(res)
+        p1 .+= reshape(res[1:ndim * mdim], size(p1)...)
+        a .+= reshape(res[ndim * mdim + 1 : end], size(a)...)
+        if norm(res) < 20*eps(eltype(CF))
+#             print(":$(k):")
+            break
+        end
     end
+    # calculating the rest of the solution
     beta = p1' * q2 - MM
     p2 = q2 - p1 * beta
 
@@ -147,7 +225,11 @@ function retract!(M::OAEManifold{ndim, mdim, order, false, field}, p, q, X, meth
     return p
 end
 
-    
+function retract(M::OAEManifold{ndim, mdim, order, orthogonal, field}, q, X, alpha::Number, method::AbstractRetractionMethod) where {ndim, mdim, order, orthogonal, field}
+    p = zero(q)
+    return retract!(M, p, q, X, alpha, method)
+end
+
 function vector_transport_to!(M::OAEManifold, Y, p, X, q, VT::AbstractVectorTransportMethod)
     project!(M, Y, q, X)
     return Y
@@ -159,10 +241,18 @@ function zero(M::OAEManifold{ndim, mdim, order, orthogonal, field}) where {ndim,
 end
 
 function randn(M::OAEManifold{ndim, mdim, order, orthogonal, field}) where {ndim, mdim, order, orthogonal, field}
-    p0 = ProductRepr(map(randn, M.mlist))
-    p1 = ProductRepr(map(zero, M.mlist))
-    X0 = ProductRepr(map(zero, p1.parts))
-    return retract!(M, p1, p0, X0)
+    X = ProductRepr(map(randn, M.mlist))
+    q1 = X.parts[1]
+    q2 = X.parts[2]
+    linid = findall(isequal(1), dropdims(sum(M.mlist[2].mexp,dims=1),dims=1))
+    MM = zeros(eltype(q1), size(M.mlist[2].mexp)...)
+    MM[:,linid] .=  M.mlist[2].mexp[:,linid]
+
+    beta = q1' * q2 - MM
+    p2 = q2 - q1 * beta
+
+    X.parts[2] .= p2    
+    return X
 end
 
 # Now the full autoencoder manifold with conjugate dynamics
@@ -225,18 +315,13 @@ function project!(M::AENCManifold, Y, p, X)
     return X
 end
 
-function retract!(M::AENCManifold, q, p, X, method::AbstractRetractionMethod)
-    return retract!(M.M, q, p, X, method)
+function retract!(M::AENCManifold, q, p, X, t::Number, method::AbstractRetractionMethod)
+    return retract!(M.M, q, p, X, t, method)
 end
 
-function retract(
-    M::AENCManifold,
-    p,
-    X,
-    m::AbstractRetractionMethod = default_retraction_method(M),
-)
+function retract(M::AENCManifold, p, X, t::Number, m::AbstractRetractionMethod = default_retraction_method(M))
     q = allocate_result(M, retract, p, X)
-    return retract!(M, q, p, X, m)
+    return retract!(M, q, p, X, t, m)
 end
 
 function vector_transport_to!(M::AENCManifold, Y, p, X, q, method::AbstractVectorTransportMethod)
@@ -468,21 +553,22 @@ function AENCROMRiemannianGradient(M::AENCManifold{ndim, mdim, Worder, Sorder, o
     return project(M, X, AENCROMGradient(M, X, dataIN, dataOUT))
 end
 
-mutable struct AENCDebugEig <: DebugAction
+mutable struct AENCDebug <: DebugAction
     print::Function
     t0
     Tstep
-    AENCDebugEig(Tstep, print::Function=print) = new(print, time(), Tstep)
+    AENCDebug(Tstep, print::Function=print) = new(print, time(), Tstep)
 end
 
-function (d::AENCDebugEig)(p::P,o::O,i::Int) where {P <: Problem, O <: Options}
+function (d::AENCDebug)(mp,trs,i::Int)
     d.print(@sprintf("time = %.1f[s] ", time()-d.t0), 
-            @sprintf("F(x) = %.4e ", get_cost(p, o.x)), 
-            @sprintf("G(x) = %.4e ", norm(p.M,o.x,o.gradient)),
-            "|",abs.(eigvals(getLinearPart(AENC_S(p.M), AENC_Spoint(o.x)))), 
-            angle.(eigvals(getLinearPart(AENC_S(p.M), AENC_Spoint(o.x))))/d.Tstep/(2*pi),
-            )
+            @sprintf("F(x) = %.4e ", get_cost(mp, trs.p)), 
+            @sprintf("G(x) = %.4e ", norm(get_manifold(mp), trs.p, trs.X)),
+            "| S:", 
+            unique(sort(abs.(eigvals(getLinearPart(AENC_S(get_manifold(mp)),AENC_Spoint(trs.p)))))),
+            unique(sort(abs.(angle.(eigvals(getLinearPart(AENC_S(get_manifold(mp)),AENC_Spoint(trs.p))))/d.Tstep))))
 end
+
 
 @doc raw"""
     AENCIndentify(dataIN, dataOUT, Tstep, embedscales, freq, orders = (S=7,W=7))
@@ -538,7 +624,8 @@ function AENCIndentify(dataINorig, dataOUTorig, Tstep, embedscales, freq, orders
                         X,
                         retraction_method=M.R,
                         vector_transport_method=M.VT,
-                        stepsize = WolfePowellBinaryLinesearch(M.R,M.VT, 0.0, 0.99),
+                        stepsize = WolfePowellBinaryLinesearch(M, retraction_method=M.R, vector_transport_method=M.VT),
+#                         stepsize = WolfePowellBinaryLinesearch(M.R,M.VT, 0.0, 0.99),
                         stopping_criterion=StopWhenAny(
                             StopWhenGradientNormLess(1e-8),
                             StopAfterIteration(iteration.aenc)),
@@ -548,7 +635,7 @@ function AENCIndentify(dataINorig, dataOUTorig, Tstep, embedscales, freq, orders
                         :Iteration,
                         :Cost,
                         " | ",
-                        AENCDebugEig(Tstep),
+                        AENCDebug(Tstep),
                         "\n",
                         1,
                         ])
@@ -560,7 +647,8 @@ function AENCIndentify(dataINorig, dataOUTorig, Tstep, embedscales, freq, orders
                         X,
                         retraction_method=M.R,
                         vector_transport_method=M.VT,
-                        stepsize = WolfePowellBinaryLinesearch(M.R,M.VT),
+                        stepsize = WolfePowellBinaryLinesearch(M, retraction_method=M.R, vector_transport_method=M.VT),
+#                         stepsize = WolfePowellBinaryLinesearch(M.R,M.VT),
                         stopping_criterion=StopWhenAny(
                             StopWhenGradientNormLess(1e-8),
                             StopAfterIteration(iteration.map)),
@@ -570,7 +658,7 @@ function AENCIndentify(dataINorig, dataOUTorig, Tstep, embedscales, freq, orders
                         :Iteration,
                         :Cost,
                         " | ",
-                        AENCDebugEig(Tstep),
+                        AENCDebug(Tstep),
                         "\n",
                         1,
                         ])
@@ -610,11 +698,13 @@ function AENCIndentify(dataINorig, dataOUTorig, Tstep, embedscales, freq, orders
     XWt = zero(MW)
     DensePolySubstitute!(MW, XWt, MW, XW, MWr, XWr)
     
-    Dr = 0.0001
-    r = range(0,1,step=Dr)
-    opscal = ones(1,size(XW,1))/size(XWt,1)
-    data_freq, data_damp, data_r, freq_old, damp_old, r_old = MAPManifoldFrequencyDamping(MW, XWt, MRr, XRr, r, Tstep; output = opscal)
-    return data_freq, data_damp, data_r*scale, scale, freq_old, damp_old, r_old*scale
+    @show r_max = maximum(sqrt.(sum((reshape(embedscales,1,:) * dataINorig) .^ 2, dims=1)))
+    That, Rhat_r = MAPFrequencyDamping(MW, XWt, MRr, XRr, 0.55, output = reshape(embedscales,1,:))
+    
+    r = range(0, domain(That).right, length=1000)
+    omega = abs.(That.(r)/Tstep)
+    zeta = -log.(abs.(Rhat_r.(r))) ./ abs.(That.(r))
+    return omega, zeta, collect(r * scale)
 end
 
 function testAENCManifold()
@@ -639,7 +729,7 @@ function testAENCManifold()
     println("p1 constraints")
     display(p1.parts[1]' * p1.parts[1])
     display(p1.parts[1]' * p1.parts[2])
-
+    return
     # M = AENCManifold(ndim, mdim, Sorder, Worder, field::AbstractNumbers=ℝ)
     M = AENCManifold(10, 2, 5, 5, false)
     X = randn(M)
